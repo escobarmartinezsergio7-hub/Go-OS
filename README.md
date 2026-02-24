@@ -1,5 +1,7 @@
 # Go OS
 
+*Actualmente en desarrollo.*
+
 **Go OS** es un sistema operativo experimental, moderno y ligero desarrollado desde cero. Está diseñado para ser rápido, eficiente y visualmente atractivo. Cuenta con su propio kernel y una interfaz de usuario gráfica (GUI) completa y funcional.
 
 ## Características Principales
@@ -28,7 +30,7 @@ El sistema arranca utilizando el estándar UEFI con un bootloader personalizado.
 * **HTML / CSS / JS / Ruby:** Involucrados dentro de los soportes experimentales para la interpretación web con el motor integrado (*LiteHTMLBridge*) y el emulador en el entorno *Linux Runtime* (capa de compatibilidad opcional para correr apps portadas).
 
 ---
-*Desarrollado y mantenido por [Sergio Escobar Martinez](https://github.com/escobarmartinezsergio7-hub) y contribuyentes de código abierto.*
+*Desarrollado y mantenido por Emmanuel Escobar Ochoa y contribuyentes de código abierto.*
 
 ---
 

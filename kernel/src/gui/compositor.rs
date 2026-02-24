@@ -10319,128 +10319,140 @@ impl Compositor {
         );
 
         let item_count = self.explorer_context_menu_item_count(menu);
+        let is_trash_dir = {
+            let mut fat = unsafe { crate::fat32::Fat32::new() };
+            fat.resolve_path(fat.root_cluster, "TRASH/").map(|(_, c)| c).unwrap_or(0) == menu.source_dir_cluster && menu.source_dir_cluster >= 2
+        };
+
         for idx in 0..item_count {
             let item_rect = self.explorer_context_menu_item_rect(menu, idx);
             let mut label = "";
             let mut bg = 0x294259u32;
             let mut fg = 0xEAF6FFu32;
 
-            match menu.kind {
-                ExplorerContextMenuKind::FileItem => {
-                    let is_zip = menu
-                        .target_item
-                        .as_ref()
-                        .map(Self::explorer_item_is_zip)
-                        .unwrap_or(false);
-                    let is_deb = menu
-                        .target_item
-                        .as_ref()
-                        .map(Self::explorer_item_is_deb)
-                        .unwrap_or(false);
-                    if idx == 0 {
-                        label = "Copiar";
-                        bg = 0x2B5D45;
-                    } else if idx == 1 {
-                        label = "Cortar";
-                        bg = 0x6A3A3A;
-                    } else if idx == 2 {
-                        label = "Renombrar";
-                        bg = 0x36596F;
-                    } else if idx == 3 {
-                        label = "Eliminar";
-                        bg = 0x6A2D2D;
-                        fg = 0xFFE5E5;
-                    } else if menu.selection_count <= 1 {
-                        let mut extra_idx = 4usize;
-                        if is_zip {
-                            if idx == extra_idx {
-                                label = "Extraer aqui";
-                                bg = 0x36596F;
-                            }
-                            extra_idx += 1;
-                        }
-                        if is_deb && idx == extra_idx {
-                            label = "Instalar .deb";
-                            bg = 0x3F5A2C;
-                            fg = 0xF1FFE6;
-                        }
-                    }
+            if is_trash_dir {
+                if idx == 0 {
+                    label = "Restaurar";
+                    bg = 0x2B5D45;
                 }
-                ExplorerContextMenuKind::DirectoryItem => {
-                    let is_trash = menu.target_item.as_ref().map(|i| i.kind == ExplorerItemKind::ShortcutRecycleBin).unwrap_or(false);
-                    if is_trash {
-                        if idx == 0 {
-                            label = "Vaciar Papelera";
-                            bg = 0x6A2D2D;
-                            fg = 0xFFE5E5;
-                        }
-                    } else {
-                        let can_delete = menu
+            } else {
+                match menu.kind {
+                    ExplorerContextMenuKind::FileItem => {
+                        let is_zip = menu
                             .target_item
                             .as_ref()
-                            .map(|item| Self::explorer_directory_can_delete(menu.source_dir_cluster, item))
+                            .map(Self::explorer_item_is_zip)
+                            .unwrap_or(false);
+                        let is_deb = menu
+                            .target_item
+                            .as_ref()
+                            .map(Self::explorer_item_is_deb)
                             .unwrap_or(false);
                         if idx == 0 {
-                            label = "Copiar carpeta";
+                            label = "Copiar";
                             bg = 0x2B5D45;
                         } else if idx == 1 {
-                            label = "Cortar carpeta";
+                            label = "Cortar";
                             bg = 0x6A3A3A;
                         } else if idx == 2 {
-                            label = "Renombrar carpeta";
+                            label = "Renombrar";
                             bg = 0x36596F;
-                        } else if idx == 3 && can_delete {
-                            label = "Eliminar carpeta";
+                        } else if idx == 3 {
+                            label = "Eliminar";
                             bg = 0x6A2D2D;
                             fg = 0xFFE5E5;
+                        } else if menu.selection_count <= 1 {
+                            let mut extra_idx = 4usize;
+                            if is_zip {
+                                if idx == extra_idx {
+                                    label = "Extraer aqui";
+                                    bg = 0x36596F;
+                                }
+                                extra_idx += 1;
+                            }
+                            if is_deb && idx == extra_idx {
+                                label = "Instalar .deb";
+                                bg = 0x3F5A2C;
+                                fg = 0xF1FFE6;
+                            }
                         }
                     }
-                }
-                ExplorerContextMenuKind::PasteArea => {
-                    if idx == 0 {
-                        label = "Crear carpeta";
-                        bg = 0x2D4A5F;
-                    } else if idx == 1 {
-                        label = "Crear nota";
-                        bg = 0x3A4D66;
-                    } else if idx == 2 && menu.show_paste {
-                        if let Some(clip) = self.explorer_clipboard.as_ref() {
-                            if clip.mode == ExplorerClipboardMode::Cut {
-                                label = "Pegar (mover)";
-                                bg = 0x5A4630;
-                                fg = 0xFFF2DE;
-                            } else {
-                                label = "Pegar";
-                                bg = 0x2F566F;
+                    ExplorerContextMenuKind::DirectoryItem => {
+                        let is_trash_shortcut = menu.target_item.as_ref().map(|i| i.kind == ExplorerItemKind::ShortcutRecycleBin).unwrap_or(false);
+                        if is_trash_shortcut {
+                            if idx == 0 {
+                                label = "Vaciar Papelera";
+                                bg = 0x6A2D2D;
+                                fg = 0xFFE5E5;
                             }
                         } else {
-                            label = "Pegar";
-                            bg = 0x2B3440;
-                            fg = 0x9FB2C4;
+                            let can_delete = menu
+                                .target_item
+                                .as_ref()
+                                .map(|item| Self::explorer_directory_can_delete(menu.source_dir_cluster, item))
+                                .unwrap_or(false);
+                            if idx == 0 {
+                                label = "Copiar carpeta";
+                                bg = 0x2B5D45;
+                            } else if idx == 1 {
+                                label = "Cortar carpeta";
+                                bg = 0x6A3A3A;
+                            } else if idx == 2 {
+                                label = "Renombrar carpeta";
+                                bg = 0x36596F;
+                            } else if idx == 3 && can_delete {
+                                label = "Eliminar carpeta";
+                                bg = 0x6A2D2D;
+                                fg = 0xFFE5E5;
+                            }
                         }
                     }
-                }
-                ExplorerContextMenuKind::DesktopArea => {
-                    if idx == 0 {
-                        label = "Crear carpeta";
-                        bg = 0x2D4A5F;
-                    } else if idx == 1 {
-                        label = "Crear nota";
-                        bg = 0x3A4D66;
-                    } else if idx == 2 && menu.show_paste {
-                        if let Some(clip) = self.explorer_clipboard.as_ref() {
-                            if clip.mode == ExplorerClipboardMode::Cut {
-                                label = "Pegar (mover)";
-                                bg = 0x5A4630;
-                                fg = 0xFFF2DE;
+                    ExplorerContextMenuKind::PasteArea => {
+                        if idx == 0 {
+                            label = "Crear carpeta";
+                            bg = 0x2D4A5F;
+                        } else if idx == 1 {
+                            label = "Crear nota";
+                            bg = 0x3A4D66;
+                        } else if idx == 2 && menu.show_paste {
+                            if let Some(clip) = self.explorer_clipboard.as_ref() {
+                                if clip.mode == ExplorerClipboardMode::Cut {
+                                    label = "Pegar (mover)";
+                                    bg = 0x5A4630;
+                                    fg = 0xFFF2DE;
+                                } else {
+                                    label = "Pegar";
+                                    bg = 0x2F566F;
+                                }
                             } else {
                                 label = "Pegar";
-                                bg = 0x2F566F;
+                                bg = 0x2B3440;
+                                fg = 0x9FB2C4;
                             }
-                        } else {
-                            label = "Pegar";
-                            bg = 0x2B3440;
-                            fg = 0x9FB2C4;
+                        }
+                    }
+                    ExplorerContextMenuKind::DesktopArea => {
+                        if idx == 0 {
+                            label = "Crear carpeta";
+                            bg = 0x2D4A5F;
+                        } else if idx == 1 {
+                            label = "Crear nota";
+                            bg = 0x3A4D66;
+                        } else if idx == 2 && menu.show_paste {
+                            if let Some(clip) = self.explorer_clipboard.as_ref() {
+                                if clip.mode == ExplorerClipboardMode::Cut {
+                                    label = "Pegar (mover)";
+                                    bg = 0x5A4630;
+                                    fg = 0xFFF2DE;
+                                } else {
+                                    label = "Pegar";
+                                    bg = 0x2F566F;
+                                }
+                            } else {
+                                label = "Pegar";
+                                bg = 0x2B3440;
+                                fg = 0x9FB2C4;
+                            }
                         }
                     }
                 }
@@ -10805,6 +10817,53 @@ impl Compositor {
             }
 
             self.explorer_context_menu = None;
+
+            let is_trash_dir = {
+                let mut fat = unsafe { crate::fat32::Fat32::new() };
+                fat.resolve_path(fat.root_cluster, "TRASH/").map(|(_, c)| c).unwrap_or(0) == menu.source_dir_cluster && menu.source_dir_cluster >= 2
+            };
+
+            if is_trash_dir && idx == 0 {
+                // Handle "Restaurar"
+                if let Some(item) = menu.target_item.as_ref() {
+                    let targets = self.explorer_context_target_items(menu.win_id, menu.source_dir_cluster, item);
+                    let mut fat = unsafe { crate::fat32::Fat32::new() };
+                    let mut any_restore_failed = false;
+                    for target in targets {
+                        let loc_name = alloc::format!("{}.loc", target.label.as_str());
+                        let read_res = fat.read_file_in_dir(menu.source_dir_cluster, loc_name.as_str());
+                        if let Ok(content) = read_res {
+                            if let Ok(cluster_str) = core::str::from_utf8(&content) {
+                                if let Ok(original_cluster) = cluster_str.trim().parse::<u32>() {
+                                    let move_res = fat.move_entry(menu.source_dir_cluster, original_cluster, target.label.as_str());
+                                    if move_res.is_ok() {
+                                        let _ = fat.delete_file_in_dir(menu.source_dir_cluster, loc_name.as_str());
+                                    } else {
+                                        any_restore_failed = true;
+                                    }
+                                } else {
+                                    any_restore_failed = true;
+                                }
+                            } else {
+                                any_restore_failed = true;
+                            }
+                        } else {
+                            any_restore_failed = true;
+                        }
+                    }
+
+                    if let Some(win) = self.windows.iter_mut().find(|w| w.id == menu.win_id) {
+                        if any_restore_failed {
+                            win.set_explorer_status("No se pudieron restaurar todos los elementos.");
+                        } else {
+                            win.set_explorer_status("Elementos restaurados correctamente.");
+                        }
+                    }
+                    self.refresh_explorer_window(menu.win_id);
+                }
+                return true;
+            }
+
             match menu.kind {
                 ExplorerContextMenuKind::FileItem => {
                     if let Some(item) = menu.target_item.as_ref() {
@@ -10868,8 +10927,8 @@ impl Compositor {
                 }
                 ExplorerContextMenuKind::DirectoryItem => {
                     if let Some(item) = menu.target_item.as_ref() {
-                        let is_trash = item.kind == ExplorerItemKind::ShortcutRecycleBin;
-                        if is_trash && idx == 0 {
+                        let is_trash_shortcut = item.kind == ExplorerItemKind::ShortcutRecycleBin;
+                        if is_trash_shortcut && idx == 0 {
                             let mut fat = unsafe { crate::fat32::Fat32::new() };
                             let trash_cluster = fat.resolve_path(fat.root_cluster, "TRASH/").map(|(_, c)| c).unwrap_or(0);
                             if trash_cluster >= 2 {
@@ -10878,7 +10937,7 @@ impl Compositor {
                             if let Some(win) = self.windows.iter_mut().find(|w| w.id == menu.win_id) {
                                 win.set_explorer_status("Papelera vaciada.");
                             }
-                        } else if !is_trash {
+                        } else if !is_trash_shortcut {
                             let targets =
                                 self.explorer_context_target_items(menu.win_id, menu.source_dir_cluster, item);
                             if idx == 0 {
