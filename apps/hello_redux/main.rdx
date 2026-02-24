@@ -1,0 +1,7 @@
+fn on_start() {
+  log("hello-redux started");
+}
+
+fn on_click_action() {
+  log("button clicked");
+}

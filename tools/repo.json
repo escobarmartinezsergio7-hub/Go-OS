@@ -1,0 +1,10 @@
+{
+  "name": "ReduxOS Local Repo",
+  "apps": {
+    "hello-redux": {
+      "version": "0.1.0",
+      "description": "Demo app with ReduxML and ReduxLang entrypoint",
+      "package": "packages/hello_redux.rpx"
+    }
+  }
+}

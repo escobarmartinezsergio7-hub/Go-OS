@@ -1,0 +1,88 @@
+audio: Could not create a backend for voice `adc'
+[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01HBdsDxe: loading Boot0002 "EFI Internal Shell" from Fv(7CB8BDC9-F8EB-4F34-AAEA-3EE4AF6516A1)/FvFile(7C04A583-9E3E-4F1C-AD65-E05268D0B4D1)
+BdsDxe: starting Boot0002 "EFI Internal Shell" from Fv(7CB8BDC9-F8EB-4F34-AAEA-3EE4AF6516A1)/FvFile(7C04A583-9E3E-4F1C-AD65-E05268D0B4D1)
+[2J[01;01H[01;01HUEFI Interactive Shell v2.2
+EDK II
+UEFI v2.70 (EDK II, 0x00010000)
+[1m[33m[40mMapping table[0m[37m[40m
+[1m[33m[40m      FS1:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40mHD1b:;BLK4:
+          PciRoot(0x0)/Pci(0x2,0x0)/HD(1,MBR,0x00000000,0x1,0x1FFFF)
+[1m[33m[40m      FS0:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40mHD0a65535a1:;BLK1:
+          PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)/HD(1,MBR,0xBE1AFDFA,0x3F,0xFBFC1)
+[1m[33m[40m     BLK3:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
+          PciRoot(0x0)/Pci(0x2,0x0)
+[1m[33m[40m     BLK5:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
+          PciRoot(0x0)/Pci(0x5,0x0)/NVMe(0x1,00-00-00-00-00-00-00-00)
+[1m[33m[40m     BLK0:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
+          PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)
+[1m[33m[40m     BLK2:[0m[37m[40m [1m[37m[40mAlias(s):[0m[37m[40m
+          PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x2,0xFFFF,0x0)
+[17;01HPress [1m[37m[40mESC[0m[37m[40m in 5 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[17;01HPress [1m[37m[40mESC[0m[37m[40m in 4 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.[17;01HPress [1m[37m[40mESC[0m[37m[40m in 3 seconds to skip [1m[33m[40mstartup.nsh[0m[37m[40m or any other key to continue.
+[1m[33m[40mShell> [0m[37m[40m\EFI\BOOT\BOOTX64.EFI
+[2J[01;01H[=3h[2J[01;01H[2J[01;01HScanning PCI bus...
+Found VirtIO Device (1AF4)
+VirtIO Block: Found.
+VirtIO Queue Size found (raw):
+VirtIO Block: Initialized & Ready.
+Found VirtIO Device (1AF4)
+VirtIO Net: Resetting device...
+VirtIO Net: Acknowledging...
+VirtIO Net: Enabling...
+VirtIO Net: Driver OK.
+VirtIO Net MAC:
+52:54:00:12:34:56
+Found VirtIO Device (1AF4)
+VirtIO: Modern device found (unsupported).
+Unknown VirtIO device ID (legacy)
+Found NVMe Controller
+NVMe: Initialized (Stub). MMIO Base found.
+NVMe Base Address:
+000000C000008000
+Found xHCI (USB 3.0) Controller
+xHCI: Initialized (Stub). MMIO Base found.
+Found Intel HDA Audio Controller
+Audio (HDA): Initialized (Stub). MMIO Base found.
+QuotaManager: Initialized.
+Quota Test: Write 1MB to system [OK]
+Quota Exceeded for App!
+Quota Test: Write 10MB to system [OK - Blocked]
+FAT32: Initializing...
+FAT32: Sector 0 not a BPB (invalid bytes/sec). Checking MBR...
+FAT32: Volume Found!
+Files:
+  [VOL ] BOOTOS     
+  [FILE] BOOTOS (0 bytes)
+  [FILE] ~1 (4096 bytes)
+  [FILE] _START~4 (4096 bytes)
+  [DIR ] EFI (0 bytes)
+  [FILE] _EF~5 (4096 bytes)
+  [FILE] STARTUP (22 bytes)
+ReduxOS UEFI Kernel - Phase 1+
+x86_64 + OVMF | Rust no_std
+
+Memory map: regions=104 conventional=950 MiB
+IDT skeleton: init=true limit=4095 base=0x3d675db0
+Type 'help' to list commands.
+Use 'boot' for bare metal runtime (PS/2), 'boot uefi' for USB keyboards.
+Use 'boot irq' for experimental IRQ timer mode (auto fallback).
+
+redux> s
+Unknown command: s
+redux> cd EFI
+redux> ls
+Files:
+  [DIR ] . (0 bytes)
+  [DIR ] .. (0 bytes)
+  [DIR ] BOOT (0 bytes)
+  [FILE] _BOO~3 (4096 bytes)
+redux> cd ..
+redux> ls
+Files:
+  [VOL ] BOOTOS     
+  [FILE] BOOTOS (0 bytes)
+  [FILE] ~1 (4096 bytes)
+  [FILE] _START~4 (4096 bytes)
+  [DIR ] EFI (0 bytes)
+  [FILE] _EF~5 (4096 bytes)
+  [FILE] STARTUP (22 bytes)
+redux> scripts/run_uefi.sh: line 80: 33216 Killed: 9               "${QEMU_BIN}" -machine q35 -m 1024 -drive "if=pflash,format=raw,readonly=on,file=${OVMF_CODE}" -drive "if=pflash,format=raw,file=${VARS_FILE}" -device virtio-blk-pci,drive=hd0,disable-modern=on,disable-legacy=off -drive "if=none,id=hd0,format=raw,file=${BUILD_DIR}/esp.img" -drive "format=raw,file=fat:rw:${ESP_DIR}" -device virtio-net-pci,netdev=net0,disable-modern=on,disable-legacy=off -netdev "user,id=net0" -device virtio-keyboard-pci,disable-modern=on,disable-legacy=off -device nvme,drive=nvme0,serial=1234,physical_block_size=4096,logical_block_size=4096 -drive "if=none,id=nvme0,format=raw,file=${BUILD_DIR}/disk_nvme.img" -device qemu-xhci,id=xhci -device usb-tablet,bus=xhci.0 -device intel-hda -device hda-duplex -serial stdio

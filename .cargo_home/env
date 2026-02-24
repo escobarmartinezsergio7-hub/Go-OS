@@ -1,0 +1,11 @@
+#!/bin/sh
+# rustup shell setup
+# affix colons on either side of $PATH to simplify matching
+case ":${PATH}:" in
+    *:"/Users/mac/Documents/New project/.cargo_home/bin":*)
+        ;;
+    *)
+        # Prepending path in case a system-installed rustc needs to be overridden
+        export PATH="/Users/mac/Documents/New project/.cargo_home/bin:$PATH"
+        ;;
+esac

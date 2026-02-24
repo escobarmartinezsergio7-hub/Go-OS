@@ -1,0 +1,51 @@
+[package]
+name = "redux_kernel"
+version = "0.2.0"
+edition = "2021"
+
+[[bin]]
+name = "redux_kernel"
+path = "src/main.rs"
+
+[features]
+default = ["vaev_bridge"]
+servo_bridge = []
+servo_external = ["servo_bridge"]
+vaev_bridge = []
+vaev_external = ["vaev_bridge"]
+
+[dependencies]
+uefi = { version = "0.33", features = ["alloc"] }
+linked_list_allocator = "0.10"
+smoltcp = { version = "0.10", default-features = false, features = ["alloc", "log", "medium-ethernet", "proto-ipv4", "proto-ipv6", "socket-tcp", "socket-udp", "socket-dhcpv4", "socket-dns"] }
+rustls = { version = "0.23", default-features = false, features = ["logging", "tls12"] }
+rustls-rustcrypto = { version = "0.0.2-alpha", default-features = false, features = ["alloc"] }
+webpki-roots = "0.26"
+rand_core = { version = "0.6", default-features = false, features = ["alloc"] }
+getrandom = { version = "0.2", default-features = false, features = ["rdrand"] }
+sha2 = { version = "0.10", default-features = false, features = ["force-soft"] }
+curve25519-dalek = { version = "4.1", default-features = false, features = ["alloc", "precomputed-tables"] }
+polyval = { version = "0.6", default-features = false }
+poly1305 = { version = "0.8", default-features = false }
+aes-gcm = { version = "0.10", default-features = false, features = ["alloc", "aes"] }
+chacha20poly1305 = { version = "0.10", default-features = false, features = ["alloc"] }
+aes = { version = "0.8", default-features = false }
+chacha20 = { version = "0.9", default-features = false }
+ghash = { version = "0.5", default-features = false }
+universal-hash = { version = "0.5", default-features = false }
+miniz_oxide = { version = "0.8", default-features = false, features = ["with-alloc"] }
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+opt-level = "s"
+lto = true
+
+[patch.crates-io]
+polyval = { path = "../packages/polyval" }
+poly1305 = { path = "../packages/poly1305" }
+aes = { path = "../packages/aes" }
+curve25519-dalek = { path = "../packages/curve25519-dalek" }
+chacha20 = { path = "../packages/chacha20" }

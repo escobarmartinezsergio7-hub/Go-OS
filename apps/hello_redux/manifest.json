@@ -1,0 +1,7 @@
+{
+  "id": "hello-redux",
+  "name": "Hello Redux",
+  "version": "0.1.0",
+  "entry": "main.rdx",
+  "layout": "main.rml"
+}

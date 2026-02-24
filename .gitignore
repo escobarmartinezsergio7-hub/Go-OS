@@ -1,0 +1,10 @@
+/build/
+/kernel/target/
+/sdk/reduxlang/target/
+/installed_apps/
+*.iso
+*.elf
+*.o
+*.a
+*.bin
+*.rpx
