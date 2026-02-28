@@ -1,7 +1,0 @@
-<App title="Hello Redux" theme="dark">
-  <View padding="16" background="#111827">
-    <Header text="Hello ReduxOS" color="#22D3EE" size="24" />
-    <Text id="status" value="App loaded from .rpx package" color="#E5E7EB" />
-    <Button id="action" label="Run" color="#0EA5E9" />
-  </View>
-</App>
