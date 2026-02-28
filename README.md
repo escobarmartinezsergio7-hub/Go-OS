@@ -47,12 +47,17 @@ Redux Studio no es solo un editor de texto, sino el punto de partida para constr
    - **Cómo funciona:** Redux Studio te permite escribir scripts en ReduxLang y guardarlos. El OS cuenta con un *lexer*, *parser* y evaluador nativo (`sdk/reduxlang`) embebido en el kernel.
    - **Conectividad:** Los scripts de ReduxLang pueden ser invocados desde la Terminal. Al ejecutarse, las sentencias son leídas directamente desde disco (FAT32), convertidas en un Árbol de Sintaxis Abstracta (AST) y evaluadas en tiempo de ejecución en el mismo *userspace*, permitiendo automatizaciones y procesamiento matemático/lógico nativo.
 
-2. **Ruby embebido (`.rb`):** 
+2. **Redux Markup Language (`.rml`):** 
+   Es el lenguaje de marcado declarativo utilizado para construir las interfaces de usuario (UI) de las aplicaciones en Go OS.
+   - **Cómo funciona:** Define la estructura visual de una ventana (botones, etiquetas, contenedores, etc.) mediante etiquetas XML-like.
+   - **Enlace con la lógica:** Los archivos `.rml` trabajan en conjunto con los scripts `.rdx`. Mientras el archivo `.rml` define cómo se ve la aplicación, el archivo `.rdx` asigna la lógica (qué ocurre cuando se hace clic en un botón, por ejemplo). El motor gráfico de Go OS se encarga de parsear el `.rml` y enlazar los eventos de la interfaz directamente con las funciones expuestas en el código ReduxLang correspondiente.
+
+3. **Ruby embebido (`.rb`):** 
    Go OS incluye un subconjunto ligero del intérprete de Ruby empaquetado y adaptado para correr en modo UEFI/Ring 3.
    - **Cómo se usa:** En Redux Studio puedes escribir programas en Ruby orientados a la gestión del sistema, como por ejemplo las herramientas y builders del formato de paquetes propios (`.rpx`).
    - **Conectividad con el OS:** Los scripts guardados se ejecutan desde la línea de comandos (`ruby <file.rb>`). El intérprete de Ruby se comunica enviando llamadas asíncronas de sistema (*syscalls*) mediante `INT 0x80` para solicitar memoria al *allocator*, leer/escribir archivos bloque a bloque desde los medios flash y renderizar la salida de texto directamente en las capas superpuestas de la interfaz del compositor.
 
-Gracias a este entorno combinado, puedes usar **Redux Studio** para crear un script de inicialización (`startup.nsh`), escribir la lógica empaquetadora de una nueva aplicación en Ruby, o experimentar programando cálculos y bucles en ReduxLang, cerrando así el ciclo de desarrollo íntegramente de forma interactiva ("*self-hosted*") dentro del propio Go OS sin depender de un PC externo.
+Gracias a este entorno combinado, puedes usar **Redux Studio** para crear un script de inicialización (`startup.nsh`), escribir la lógica empaquetadora de una nueva aplicación en Ruby, o diseñar una aplicación gráfica completa combinando vistas en **`.rml`** con lógica en **`.rdx`**, cerrando así el ciclo de desarrollo íntegramente de forma interactiva ("*self-hosted*") dentro del propio Go OS sin depender de un PC externo.
 
 ## Lenguajes de Programación Utilizados
 
