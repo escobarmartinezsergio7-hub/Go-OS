@@ -15,15 +15,26 @@
   * Menús contextuales nativos tanto en el escritorio como en el explorador de archivos.
   * Renderizado de texto y fuentes, con soporte avanzado usando *LiteHTML* para ciertas integraciones web.
 * **Explorador de Archivos:** Permite la navegación en unidades físicas (como USB en formato FAT32) y discos virtuales. Soporta arrastrar, soltar, copiar, y pegar archivos/directorios entre diferentes volúmenes físicos de forma robusta.
-* **Redux Studio (IDE):** Un entorno de desarrollo integrado nativo que permite escribir, manejar código y guardar archivos, con sistema de pestañas y acceso al portapapeles global del OS.
+* **Redux Studio (IDE):** Nuestro entorno de desarrollo integrado nativo. Permite la edición avanzada de archivos con soporte para múltiples pestañas, resaltado básico, y un diseño enfocado en la productividad (*ver sección inferior para más detalles*).
 * **Herramientas de Sistema:**
   * **Notepad:** Un bloc de notas ligero para visualización y edición rápida de archivos de texto plano.
   * **Consola / Terminal:** Capaz de interactuar con el sistema de archivos de manera asíncrona, soporta un esquema de trabajo similar a los shells UNIX, así como comandos UEFI.
   * **Multimedia:** Visores de imágenes integrados (formatos como PNG) y reproductores/decodificadores de audio iterativos.
 
-## Cómo Funciona
-
 El sistema arranca utilizando el estándar UEFI con un bootloader personalizado. Después de elegir la partición de arranque, se presenta un **Boot Splash** visual mientras el kernel inicializa estructuras vitales como el *allocator* de memoria y detecta los dispositivos de almacenamiento. A continuación, el **Compositor Gráfico** toma el control del *framebuffer* de UEFI para dibujar la GUI y gestionar todos los eventos de hardware (teclado, ratón). Utiliza un sistema cooperativo en el que aplicaciones núcleo como explorar, jugar o utilizar el Editor de Texto / Studio actúan integrados con este mismo bucle principal bajo la arquitectura de `Windows` y widgets nativos propios de Go OS.
+
+## Redux Studio en detalle
+
+**Redux Studio** es el Entorno de Desarrollo Integrado (IDE) creado específicamente para Go OS. Actúa como la herramienta de texto principal del sistema para programadores y entusiastas que exploran el entorno interno.
+
+### ¿Cómo funciona?
+
+1. **Gestión de Ventanas y Renderizado:** Se ejecuta dentro del compositor gráfico de Go OS y renderiza completamente en software sobre el *framebuffer*, usando una grilla de texto en formato 5x7 o tipografías de sistema. Su interfaz (barra superior, pestañas, panel de edición primario) se recalcula dinámicamente según se redimensiona su ventana.
+2. **Pestañas y Buffers (Tabs):** Mantiene una memoria de búferes de archivos de texto abiertos de manera simultánea. El usuario puede saltar entre distintas pestañas, cada una con su propio cursor, *scroll* (desplazamiento de líneas y columnas) y control de guardado de estado. 
+3. **Portapapeles Global:** Se conecta directamente a la arquitectura de memoria del sistema y su *API* de interacciones universales. Permite copiar partes del código usando sistemas de selección por ratón y pegarlos instantáneamente en la Consola / Terminal o inversamente gracias a un sistema de *clipboard* unificado a nivel Compositor.
+4. **Almacenamiento Directo (I/O):** Lee y escribe los ficheros utilizando los *device index* en clústeres FAT32 tanto de la partición de sistema donde corre el kernel, como en medios exógenos montados al vuelo (ej: unidades flash USB u otros discos formados compatibles).
+
+A nivel arquitectura, Redux Studio evalúa teclas presionadas durante cada ciclo de *tick* de la interrupción del reloj o eventos en la cola *polling* para insertar o borrar caracteres, y dibuja cada línea iterando sobre los bytes en su propia estructura de datos tipo `Vec<String>`.
 
 ## Lenguajes de Programación Utilizados
 
