@@ -23,6 +23,8 @@
 
 El sistema arranca utilizando el estándar UEFI con un bootloader personalizado. Después de elegir la partición de arranque, se presenta un **Boot Splash** visual mientras el kernel inicializa estructuras vitales como el *allocator* de memoria y detecta los dispositivos de almacenamiento. A continuación, el **Compositor Gráfico** toma el control del *framebuffer* de UEFI para dibujar la GUI y gestionar todos los eventos de hardware (teclado, ratón). Utiliza un sistema cooperativo en el que aplicaciones núcleo como explorar, jugar o utilizar el Editor de Texto / Studio actúan integrados con este mismo bucle principal bajo la arquitectura de `Windows` y widgets nativos propios de Go OS.
 
+![Redux Studio](assets/redux_studio.png)
+
 ## Redux Studio en detalle
 
 **Redux Studio** es el Entorno de Desarrollo Integrado (IDE) creado específicamente para Go OS. Actúa como la herramienta de texto principal del sistema para programadores y entusiastas que exploran el entorno interno.
