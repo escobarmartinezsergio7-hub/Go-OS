@@ -2,6 +2,9 @@
 
 ![Go OS Logo](assets/logo.png)
 
+![Go OS Start Menu](assets/file_explorer_1.jpg)
+![Go OS File Explorer](assets/file_explorer_2.jpg)
+
 *Actualmente en desarrollo.*
 
 **Go OS** es un sistema operativo experimental, moderno y ligero desarrollado desde cero. Está diseñado para ser rápido, eficiente y visualmente atractivo. Cuenta con su propio kernel y una interfaz de usuario gráfica (GUI) completa y funcional.
