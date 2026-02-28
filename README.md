@@ -38,6 +38,22 @@ El sistema arranca utilizando el estándar UEFI con un bootloader personalizado.
 
 A nivel arquitectura, Redux Studio evalúa teclas presionadas durante cada ciclo de *tick* de la interrupción del reloj o eventos en la cola *polling* para insertar o borrar caracteres, y dibuja cada línea iterando sobre los bytes en su propia estructura de datos tipo `Vec<String>`.
 
+### Construcción de Aplicaciones y Lenguajes Soportados
+
+Redux Studio no es solo un editor de texto, sino el punto de partida para construir herramientas y aplicaciones dentro de Go OS utilizando lenguajes interpretados nativos que se conectan con el sistema.
+
+1. **ReduxLang (`.rdx`):** 
+   Es el lenguaje de *scripting* propio y experimental integrado en el sistema operativo. Su sintaxis está influenciada por Rust y JavaScript.
+   - **Cómo funciona:** Redux Studio te permite escribir scripts en ReduxLang y guardarlos. El OS cuenta con un *lexer*, *parser* y evaluador nativo (`sdk/reduxlang`) embebido en el kernel.
+   - **Conectividad:** Los scripts de ReduxLang pueden ser invocados desde la Terminal. Al ejecutarse, las sentencias son leídas directamente desde disco (FAT32), convertidas en un Árbol de Sintaxis Abstracta (AST) y evaluadas en tiempo de ejecución en el mismo *userspace*, permitiendo automatizaciones y procesamiento matemático/lógico nativo.
+
+2. **Ruby embebido (`.rb`):** 
+   Go OS incluye un subconjunto ligero del intérprete de Ruby empaquetado y adaptado para correr en modo UEFI/Ring 3.
+   - **Cómo se usa:** En Redux Studio puedes escribir programas en Ruby orientados a la gestión del sistema, como por ejemplo las herramientas y builders del formato de paquetes propios (`.rpx`).
+   - **Conectividad con el OS:** Los scripts guardados se ejecutan desde la línea de comandos (`ruby <file.rb>`). El intérprete de Ruby se comunica enviando llamadas asíncronas de sistema (*syscalls*) mediante `INT 0x80` para solicitar memoria al *allocator*, leer/escribir archivos bloque a bloque desde los medios flash y renderizar la salida de texto directamente en las capas superpuestas de la interfaz del compositor.
+
+Gracias a este entorno combinado, puedes usar **Redux Studio** para crear un script de inicialización (`startup.nsh`), escribir la lógica empaquetadora de una nueva aplicación en Ruby, o experimentar programando cálculos y bucles en ReduxLang, cerrando así el ciclo de desarrollo íntegramente de forma interactiva ("*self-hosted*") dentro del propio Go OS sin depender de un PC externo.
+
 ## Lenguajes de Programación Utilizados
 
 * **Rust:** Es el corazón de **Go OS**. Prácticamente toda la base del proyecto, desde las subrutinas de bajo nivel del kernel, el manejo de interrupciones, los controladores del sistema de archivos (FAT32), hasta la construcción del Compositor visual y todas las utilidades de escritorio (Explorador, Taskbar) están desarrollados en código Rust seguro y eficiente.
