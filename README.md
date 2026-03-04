@@ -24,6 +24,19 @@
   * **Consola / Terminal:** Capaz de interactuar con el sistema de archivos de manera asíncrona, soporta un esquema de trabajo similar a los shells UNIX, así como comandos UEFI.
   * **Multimedia:** Visores de imágenes integrados (formatos como PNG) y reproductores/decodificadores de audio iterativos.
 
+### Novedades recientes (marzo 2026)
+
+* **Escritorios virtuales (1 a 10):** Se pueden crear desde un botón `+` en la barra de tareas. Al crear uno nuevo, el sistema cambia automáticamente a ese escritorio.
+* **Contexto por escritorio:** Cada escritorio mantiene sus propias ventanas (abiertas, minimizadas o maximizadas) y sus accesos directos/iconos de superficie.
+* **Barra de tareas compartida:** La barra de tareas se conserva entre todos los escritorios.
+* **Selector de escritorios (Alt+Tab):** Muestra una ventana de selección con escritorios numerados del 1 al 10 para cambiar rápidamente.
+* **Eliminar escritorio con `X`:** En el selector, cada escritorio existente incluye botón `X` para eliminarlo (manteniendo siempre al menos uno).
+* **Gestor de minimizadas con overflow:** Las minimizadas siguen visibles en la barra; cuando no caben, aparece un botón cuadrado que abre un panel con tarjetas.
+* **Panel de minimizadas sin límite práctico:** En el panel puedes:
+  * Hacer click en una tarjeta para restaurar la app/carpeta.
+  * Hacer click en `X` para cerrar esa ventana minimizada.
+  * Usar la rueda del mouse para hacer scroll y navegar el resto de minimizadas acumuladas.
+
 El sistema arranca utilizando el estándar UEFI con un bootloader personalizado. Después de elegir la partición de arranque, se presenta un **Boot Splash** visual mientras el kernel inicializa estructuras vitales como el *allocator* de memoria y detecta los dispositivos de almacenamiento. A continuación, el **Compositor Gráfico** toma el control del *framebuffer* de UEFI para dibujar la GUI y gestionar todos los eventos de hardware (teclado, ratón). Utiliza un sistema cooperativo en el que aplicaciones núcleo como explorar, jugar o utilizar el Editor de Texto / Studio actúan integrados con este mismo bucle principal bajo la arquitectura de `Windows` y widgets nativos propios de Go OS.
 
 ![Redux Studio](assets/redux_studio.png)
