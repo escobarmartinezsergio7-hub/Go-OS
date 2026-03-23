@@ -1,0 +1,14 @@
+/Users/mac/Documents/New project/kernel/third_party/litehtml/build-win64/CMakeFiles/litehtml.dir
+/Users/mac/Documents/New project/kernel/third_party/litehtml/build-win64/CMakeFiles/edit_cache.dir
+/Users/mac/Documents/New project/kernel/third_party/litehtml/build-win64/CMakeFiles/rebuild_cache.dir
+/Users/mac/Documents/New project/kernel/third_party/litehtml/build-win64/CMakeFiles/list_install_components.dir
+/Users/mac/Documents/New project/kernel/third_party/litehtml/build-win64/CMakeFiles/install.dir
+/Users/mac/Documents/New project/kernel/third_party/litehtml/build-win64/CMakeFiles/install/local.dir
+/Users/mac/Documents/New project/kernel/third_party/litehtml/build-win64/CMakeFiles/install/strip.dir
+/Users/mac/Documents/New project/kernel/third_party/litehtml/build-win64/src/gumbo/CMakeFiles/gumbo.dir
+/Users/mac/Documents/New project/kernel/third_party/litehtml/build-win64/src/gumbo/CMakeFiles/edit_cache.dir
+/Users/mac/Documents/New project/kernel/third_party/litehtml/build-win64/src/gumbo/CMakeFiles/rebuild_cache.dir
+/Users/mac/Documents/New project/kernel/third_party/litehtml/build-win64/src/gumbo/CMakeFiles/list_install_components.dir
+/Users/mac/Documents/New project/kernel/third_party/litehtml/build-win64/src/gumbo/CMakeFiles/install.dir
+/Users/mac/Documents/New project/kernel/third_party/litehtml/build-win64/src/gumbo/CMakeFiles/install/local.dir
+/Users/mac/Documents/New project/kernel/third_party/litehtml/build-win64/src/gumbo/CMakeFiles/install/strip.dir

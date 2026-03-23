@@ -1,0 +1,8 @@
+{
+	"InstallScripts" : 
+	[
+		"/Users/mac/Documents/New project/kernel/third_party/litehtml/build-win64/cmake_install.cmake",
+		"/Users/mac/Documents/New project/kernel/third_party/litehtml/build-win64/src/gumbo/cmake_install.cmake"
+	],
+	"Parallel" : false
+}

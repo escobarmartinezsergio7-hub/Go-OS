@@ -1,0 +1,17 @@
+[package]
+name = "libsimpleservo_adapter"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "simpleservo"
+crate-type = ["staticlib"]
+path = "src/lib.rs"
+
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+opt-level = "s"
+lto = true

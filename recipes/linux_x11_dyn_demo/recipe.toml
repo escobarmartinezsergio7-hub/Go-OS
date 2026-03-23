@@ -1,0 +1,22 @@
+[package]
+id = "linux-x11-dyn-demo"
+name = "Linux X11 Dynamic Demo"
+version = "0.1.0"
+source = "apps/linux_x11_dyn_demo"
+output = "packages/lx11dyn.rpx"
+
+[app]
+entry = "main.rdx"
+layout = "main.rml"
+
+[[files]]
+src = "X11DYN.BIN"
+dst = "X11DYN.BIN"
+
+[[files]]
+src = "LD.BIN"
+dst = "LD.BIN"
+
+[sign]
+enabled = true
+output = "packages/lx11dyn.rpx.sig"

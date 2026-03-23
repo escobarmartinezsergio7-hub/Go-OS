@@ -1,0 +1,28 @@
+# Build artifacts
+/build/
+/kernel/target/
+/sdk/reduxlang/target/
+/installed_apps/
+**/target/
+
+# Binary files
+*.iso
+*.elf
+*.o
+*.a
+*.bin
+*.rpx
+
+# Toolchain and caches
+.cargo_home/
+.rustup_home/
+.cutekit/
+
+# OS metadata
+.DS_Store
+
+# Log files
+*.log
+
+# Zip files
+*.zip

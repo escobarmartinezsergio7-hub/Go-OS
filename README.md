@@ -318,7 +318,13 @@ Comandos dentro de la terminal runtime:
 - `priv next` (avanza una fase: GDT/TSS -> gates -> MSR syscall -> test CPL3)
 - `priv unsafe` (ejecuta test CPL3 real; puede ser inestable)
 - `fetch <url> [file_8_3]` (terminal GUI: descarga archivos HTTP/HTTPS completos; limite actual 4 MiB por archivo)
-- `web backend <builtin|vaev|webkit|status>` (terminal GUI: selecciona motor del Web Explorer)
+- `web backend <builtin|servo|litehtml|litehtmlrt|servort|vaev|webkit|status>` (terminal GUI: selecciona motor del Web Explorer)
+- `web servo status` (estado del bridge Servo embebido)
+- `web servort status` (estado del runtime Servo LinuxRT sin host)
+- `web servort target </SERVORT/SVRT0001.BIN>` (ruta del ejecutable ServoRT)
+- `web servort open <url>` (abre URL en ServoRT local y crea Browser si no existe)
+- `web servort frame` (diagnostico del ultimo frame del bridge LinuxRT/X11)
+- `web servort input <click x y|scroll d|key K|text T|reload|back>` (inyeccion de input local sin host)
 - `web vaev status` (estado del bridge Vaev embebido)
 - `web native <on|off|status>` (activa/desactiva pipeline nativo DOM/layout/raster interno)
 - `install <package.rpx|package.zip|package.tar|package.tar.gz|package.deb|setup.exe> [app_id]` (terminal GUI: instala paquetes descargados y genera manifiestos `.LST`/`.LNX`)
@@ -333,11 +339,39 @@ Backend Servo para Web Explorer:
 - para forzar enlace con libreria externa real:
   - `cargo build --manifest-path kernel/Cargo.toml --features "servo_bridge,servo_external"`
   - opcional: `SERVO_LIB_DIR=/ruta/a/lib` (si no, usa `kernel/third_party/servo/lib`)
+  - para generar rapido un `libsimpleservo.a` compatible ABI v1 desde este repo:
+    - `bash scripts/build_libsimpleservo_adapter.sh`
+  - helper local si tu checkout de Servo vive en `~/Desktop/servo`:
+    - `bash scripts/link_servo_desktop.sh`
+  - nota: un build normal de `servoshell` suele generar `servo` + `libservoshell.rlib`, pero eso **no** reemplaza `libsimpleservo.a` (faltan los simbolos `simpleservo_bridge_*`)
 - este repo ya incluye un shim integrado (`simpleservo_shim`) que mapea el flujo Rust API (build/webview/spin/paint) sobre el renderer interno para validar el pipeline end-to-end
 - si `servo_external` esta activo pero no encuentra `libsimpleservo`, el build hace fallback automatico al shim
 - el bridge espera estos simbolos C en el link final:
   - `simpleservo_bridge_is_ready() -> i32`
   - `simpleservo_bridge_render_text(url_ptr, url_len, out_ptr, out_cap, out_len) -> i32`
+
+Backend ServoRT local (LinuxRT + X11 bridge, sin host remoto):
+
+- comando en ReduxOS: `web backend servort`
+- target por defecto en runtime: `/SERVORT/SVRT0001.BIN`
+- stage del binario desde host:
+
+```bash
+make servort-stage SERVO_BIN=/Users/mac/Desktop/servo/target/release/servo
+```
+
+- build del ESP con payload ServoRT incluido:
+
+```bash
+make uefi
+```
+
+- el stage valida formato Linux ELF x86_64 y lista dependencias dinamicas detectadas.
+- si quieres copiar al ESP local de build en el mismo paso:
+
+```bash
+make servort-stage-esp SERVO_BIN=/Users/mac/Desktop/servo/target/release/servo
+```
 
 Backend Vaev embebido (kernel):
 
