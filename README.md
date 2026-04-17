@@ -5,6 +5,10 @@
 ![Go OS Start Menu](assets/file_explorer_1.jpg)
 ![Go OS File Explorer](assets/file_explorer_2.jpg)
 
+## 📦 Descarga
+
+> **[⬇️ Descargar GoOS.zip desde Google Drive](https://drive.google.com/file/d/1KntQtyLIi-PKK9T0PA-nE5uF_Jjb3iFP/view?usp=share_link)**
+
 *Actualmente en desarrollo.*
 
 **Go OS** es un sistema operativo experimental, moderno y ligero desarrollado desde cero. Está diseñado para ser rápido, eficiente y visualmente atractivo. Cuenta con su propio kernel y una interfaz de usuario gráfica (GUI) completa y funcional.
@@ -140,6 +144,94 @@ Esto genera:
 - `build/esp/EFI/BOOT/BOOTX64.EFI`
 - `build/esp/LINUXRT` (si existe `LINUXRT/` en la raiz del repo)
 - `build/esp/EFI/LINUX/BOOTX64.EFI` (si ejecutas `make linux-guest-stage` o activas `LINUX_GUEST_AUTO=1`)
+
+### Desplegar en USB booteable (`make deploy`)
+
+Este comando compila el kernel y copia el binario EFI a una USB formateada previamente para arranque UEFI.
+
+#### Requisitos
+
+- USB formateada con **tabla de particiones GPT** y al menos una partición **FAT32**.
+- En macOS la USB debe montarse como `/Volumes/GOOS` (datos) y `/Volumes/EFI` (EFI System Partition).
+
+#### Uso
+
+```bash
+# Compilar + copiar a ambas particiones de la USB (datos + EFI)
+make deploy
+```
+
+Targets individuales disponibles:
+
+```bash
+# Solo partición de datos
+make deploy-data
+
+# Solo EFI System Partition
+make deploy-efi
+```
+
+Si tu USB se monta con otro nombre, puedes especificarlo:
+
+```bash
+make deploy USB_DATA_VOL=/Volumes/MI_USB USB_EFI_VOL=/Volumes/EFI USB_EFI_DISK=disk4s1
+```
+
+El target `deploy` ejecuta:
+
+1. `make uefi` (compila `BOOTX64.EFI`)
+2. Copia `BOOTX64.EFI` a `<USB>/EFI/BOOT/BOOTX64.EFI` en la partición de datos
+3. Monta la EFI System Partition (si no lo está) y copia el binario ahí también
+
+Después de `make deploy`, expulsa la USB de forma segura y arranca desde ella activando el menú de boot UEFI de tu equipo (generalmente `F12`, `F2`, `Del` o `Esc` según fabricante).
+
+### Generar ISO booteable (`make iso`)
+
+Genera una imagen `.iso` UEFI-booteable que puedes grabar en USB con **Rufus**, **Etcher**, **Ventoy** o `dd`.
+
+#### Dependencias
+
+- **macOS:** `brew install xorriso`
+- **Linux:** `sudo apt install xorriso` (o `genisoimage`)
+
+#### Uso
+
+```bash
+# Compilar + generar ISO
+make iso
+```
+
+Esto genera `build/goos.iso`. Para cambiar la ruta de salida:
+
+```bash
+make iso ISO_OUT=~/Desktop/GoOS.iso
+```
+
+#### Grabar la ISO con Rufus (Windows)
+
+1. Descarga [Rufus](https://rufus.ie/).
+2. Inserta tu USB.
+3. En Rufus:
+   - **Dispositivo:** selecciona tu USB.
+   - **Tipo de arranque:** selecciona `goos.iso`.
+   - **Esquema de partición:** `GPT`.
+   - **Sistema destino:** `UEFI (no CSM)`.
+4. Click en **Empezar** y espera a que termine.
+5. Reinicia y arranca desde la USB (menú boot UEFI).
+
+#### Grabar con dd (Linux / macOS)
+
+```bash
+sudo dd if=build/goos.iso of=/dev/sdX bs=4M status=progress
+sync
+```
+
+> ⚠️ Reemplaza `/dev/sdX` con el dispositivo real de tu USB (`lsblk` para verificar).
+
+#### Grabar con Etcher (multiplataforma)
+
+1. Descarga [balenaEtcher](https://etcher.balena.io/).
+2. Selecciona `goos.iso`, selecciona tu USB, click **Flash!**.
 
 #### Linux guest EFI (ruta 2)
 
@@ -535,6 +627,22 @@ Smoke test Linux ELF (sin internet, usando binario local):
 ```bash
 # genera paquete firmado de prueba
 ruby tools/redux_recipe_build.rb recipes/linux_sandbox_smoke/recipe.toml
+```
+
+Wayland demos (GTK/Qt, clientes dinamicos):
+
+```bash
+# GTK3 demo (Wayland)
+bash apps/linux_wayland_gtk_demo/build.sh
+ruby tools/redux_recipe_build.rb recipes/linux_wayland_gtk_demo/recipe.toml
+
+# Qt Widgets demo (Wayland)
+bash apps/linux_wayland_qt_demo/build.sh
+ruby tools/redux_recipe_build.rb recipes/linux_wayland_qt_demo/recipe.toml
+
+# Alternativa sin compilar en host Linux:
+# descarga bins precompilados oficiales (Ubuntu) y los deja en la USB
+bash scripts/stage_wayland_demo_bins.sh /Volumes/GOOS
 ```
 
 En ReduxOS (terminal):
