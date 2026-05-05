@@ -7,7 +7,7 @@
 
 ## 📦 Descarga
 
-> **[⬇️ Descargar GoOS.zip desde Google Drive](https://drive.google.com/file/d/1KntQtyLIi-PKK9T0PA-nE5uF_Jjb3iFP/view?usp=share_link)**
+> **[⬇️ Descargar GoOS.zip desde Google Drive](https://drive.google.com/file/d/1UiUjeYaM_guVyEh6v4EhIuZxtWv5ULTJ/view?usp=share_link)**
 
 *Actualmente en desarrollo.*
 
