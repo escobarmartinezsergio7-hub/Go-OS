@@ -1,0 +1,7 @@
+<App title="Linux GTK Wayland Demo" theme="dark">
+  <View padding="16" background="#111827">
+    <Header text="GTK Demo Package" color="#34D399" size="22" />
+    <Text value="Compila GTKWLDMO.BIN y ejecuta en terminal Linux." color="#E5E7EB" />
+    <Text value="linux runloop startx /GTKWLDMO.BIN" color="#93C5FD" />
+  </View>
+</App>

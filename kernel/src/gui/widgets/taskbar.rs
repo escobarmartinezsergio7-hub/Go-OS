@@ -30,6 +30,7 @@ pub enum PinnedItemKind {
     Directory,
     App,
     Audio,
+    Video,
     Image,
     Archive,
     Executable,

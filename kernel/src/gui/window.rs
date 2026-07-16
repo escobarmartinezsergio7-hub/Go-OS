@@ -13,7 +13,7 @@ const TERMINAL_HISTORY_MAX_LINES: usize = 4096;
 const TERMINAL_TEXT_X: usize = 10;
 const TERMINAL_CHAR_W: usize = 6;
 
-const EXPLORER_TOP_H: i32 = 30;
+pub const EXPLORER_TOP_H: i32 = 30;
 const EXPLORER_STATUS_H: i32 = 58;
 const EXPLORER_CELL_W: i32 = 108;
 const EXPLORER_CELL_H: i32 = 98;
@@ -184,6 +184,7 @@ pub enum WindowKind {
     MediaPlayer,
     WifiManager,
     TaskManager,
+    VideoPlayer,
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -216,6 +217,10 @@ pub struct ExplorerItem {
     pub kind: ExplorerItemKind,
     pub cluster: u32,
     pub size: u32,
+    pub create_date: u16,
+    pub create_time: u16,
+    pub write_date: u16,
+    pub write_time: u16,
 }
 
 impl ExplorerItem {
@@ -225,6 +230,10 @@ impl ExplorerItem {
             kind,
             cluster,
             size,
+            create_date: 0,
+            create_time: 0,
+            write_date: 0,
+            write_time: 0,
         }
     }
 
@@ -379,6 +388,9 @@ pub struct Window {
     pub explorer_search_input_active: bool,
     pub explorer_search_active: bool,
     pub explorer_search_source_items: Vec<ExplorerItem>,
+    pub explorer_side_panel_open: bool,
+    pub explorer_side_panel_item: Option<ExplorerItem>,
+    pub explorer_side_panel_dir_size: Option<u64>,
 
     // Notepad state
     pub notepad_file_name: String,
@@ -432,6 +444,20 @@ pub struct Window {
     pub app_runner_button_targets: Vec<(Rect, String)>,
     pub app_runner_button_rect_cached: Rect,
     pub app_runner_button_rect_valid: bool,
+
+    // Video Player state
+    pub video_player_file_name: String,
+    pub video_player_file_cluster: u32,
+    pub video_player_file_size: u32,
+    pub video_player_width: u32,
+    pub video_player_height: u32,
+    pub video_player_fps: u32,
+    pub video_player_current_frame: usize,
+    pub video_player_data_offset: usize,
+    pub video_player_last_tick: u64,
+    pub video_player_status: String,
+    pub video_player_frame_buf: Vec<u8>,
+    pub video_player_cached_payload: Vec<u8>,
 
     // Redux Studio state
     pub ide_project_name: String,
@@ -549,6 +575,9 @@ impl Window {
             explorer_search_input_active: false,
             explorer_search_active: false,
             explorer_search_source_items: alloc::vec![],
+            explorer_side_panel_open: false,
+            explorer_side_panel_item: None,
+            explorer_side_panel_dir_size: None,
 
             notepad_file_name: String::from("NOTE.TXT"),
             notepad_text: String::new(),
@@ -605,6 +634,18 @@ impl Window {
             app_runner_button_targets: alloc::vec![],
             app_runner_button_rect_cached: Rect::new(0, 0, 0, 0),
             app_runner_button_rect_valid: false,
+            video_player_file_name: String::new(),
+            video_player_file_cluster: 0,
+            video_player_file_size: 0,
+            video_player_width: 0,
+            video_player_height: 0,
+            video_player_fps: 60,
+            video_player_current_frame: 0,
+            video_player_data_offset: 16,
+            video_player_last_tick: 0,
+            video_player_status: String::new(),
+            video_player_frame_buf: alloc::vec![],
+            video_player_cached_payload: alloc::vec![],
             ide_project_name: String::from("IDEAPP"),
             ide_active_tab: 2,
             ide_rust_text: String::from("fn main() {\n  // TODO: Rust code\n}\n"),
@@ -916,8 +957,8 @@ Tab DOCS is read-only.\n"
         win.output_lines.push(String::from("  cp <s> <d>- Copy file"));
         win.output_lines.push(String::from("  mv <s> <d>- Move/rename file"));
         win.output_lines.push(String::from("  disks     - List USB/NVMe/HDD devices"));
-        win.output_lines.push(String::from("  vols      - List FAT32 volumes"));
-        win.output_lines.push(String::from("  mount <n> - Mount FAT32 from 'disks' index"));
+        win.output_lines.push(String::from("  vols      - List FAT32/exFAT volumes"));
+        win.output_lines.push(String::from("  mount <n> - Mount FAT32/exFAT from 'disks' index"));
         win.output_lines.push(String::from("  unmount   - Unmount active volume"));
         win.output_lines.push(String::from("  cpdev     - Copy file between devices (USB/NVMe/HDD)"));
         win.output_lines.push(String::from("  net       - Show transport/IP/failover status"));
@@ -1046,6 +1087,14 @@ Tab DOCS is read-only.\n"
     pub fn new_media_player(id: usize, title: &str, x: i32, y: i32, width: u32, height: u32) -> Self {
         let mut win = Self::new_base(id, title, x, y, width, height);
         win.kind = WindowKind::MediaPlayer;
+        win.render();
+        win
+    }
+
+    pub fn new_video_player(id: usize, title: String, x: i32, y: i32, width: u32, height: u32) -> Self {
+        let mut win = Self::new_base(id, &title, x, y, width, height);
+        win.kind = WindowKind::VideoPlayer;
+        win.doom_native_running = true; // Use this flag as playing/paused state
         win.render();
         win
     }
@@ -1237,7 +1286,8 @@ Tab DOCS is read-only.\n"
     }
 
     fn explorer_cols(&self) -> usize {
-        let usable_w = (self.rect.width as i32 - EXPLORER_MARGIN_X * 2).max(EXPLORER_CELL_W);
+        let panel_w = if self.explorer_side_panel_open { 210 } else { 0 };
+        let usable_w = (self.rect.width as i32 - EXPLORER_MARGIN_X * 2 - panel_w).max(EXPLORER_CELL_W);
         let cols = (usable_w + EXPLORER_GAP_X) / (EXPLORER_CELL_W + EXPLORER_GAP_X);
         cols.max(1) as usize
     }
@@ -1253,7 +1303,8 @@ Tab DOCS is read-only.\n"
         }
 
         let relative_row = row - scroll_rows;
-        let x = EXPLORER_MARGIN_X + (col as i32) * (EXPLORER_CELL_W + EXPLORER_GAP_X);
+        let panel_w = if self.explorer_side_panel_open { 210 } else { 0 };
+        let x = EXPLORER_MARGIN_X + panel_w + (col as i32) * (EXPLORER_CELL_W + EXPLORER_GAP_X);
         let y = EXPLORER_MARGIN_Y + (relative_row as i32) * (EXPLORER_CELL_H + EXPLORER_GAP_Y);
         let max_y = self.content_height() - EXPLORER_STATUS_H;
 
@@ -3501,7 +3552,7 @@ Tab DOCS is read-only.\n"
     }
 
     pub fn is_media_player(&self) -> bool {
-        self.kind == WindowKind::MediaPlayer
+        self.kind == WindowKind::MediaPlayer || self.kind == WindowKind::VideoPlayer
     }
 
     pub fn is_wifi_manager(&self) -> bool {
@@ -3538,6 +3589,7 @@ Tab DOCS is read-only.\n"
             WindowKind::LinuxBridge => (560, 380),
             WindowKind::Settings => (480, 360),
             WindowKind::MediaPlayer => (400, 280),
+            WindowKind::VideoPlayer => (640, 480),
             WindowKind::WifiManager => (420, 460),
             WindowKind::TaskManager => (520, 360),
         }
@@ -3590,6 +3642,7 @@ Tab DOCS is read-only.\n"
             WindowKind::LinuxBridge => self.render_linux_bridge(),
             WindowKind::Settings => self.render_settings(),
             WindowKind::MediaPlayer => self.render_media_player(),
+            WindowKind::VideoPlayer => self.render_video_player(),
             WindowKind::WifiManager => self.render_wifi_manager(),
             WindowKind::TaskManager => self.render_task_manager(),
         }
@@ -3743,6 +3796,84 @@ Tab DOCS is read-only.\n"
             let text_w = (label.len() as i32) * 6;
             let text_x = (slot.x + ((slot.width as i32 - text_w) / 2)).max(2);
             self.draw_text(text_x as u32, (slot.y + 74) as u32, label.as_bytes(), Color(0x1D2A36));
+        }
+
+        if self.explorer_side_panel_open {
+            let panel_x = 16;
+            let panel_y = EXPLORER_TOP_H + 16;
+            let panel_w = 200;
+            let panel_h = (content_h - EXPLORER_STATUS_H - panel_y).max(0);
+
+            if panel_h > 0 {
+                let rect = Rect::new(panel_x, panel_y, panel_w as u32, panel_h as u32);
+                self.fill_rect(rect, Color(0xF4F8FC));
+                self.draw_border(rect, Color(0x8FA8C4));
+
+                // Draw 'X'
+                let close_btn = Rect::new(panel_x + panel_w - 24, panel_y + 4, 20, 20);
+                self.fill_rect(close_btn, Color(0xE85C5C));
+                self.draw_border(close_btn, Color(0xB84242));
+                self.draw_text((close_btn.x + 7) as u32, (close_btn.y + 6) as u32, b"X", Color(0xFFFFFF));
+
+                if let Some(item) = self.explorer_side_panel_item.clone() {
+                    let mut py = panel_y + 30;
+
+                    let name_label = Self::trim_label(item.label.as_str(), 28);
+                    self.draw_text(panel_x as u32 + 8, py as u32, name_label.as_bytes(), Color(0x1D2A36));
+                    py += 20;
+
+                    if item.is_file() {
+                        let parts: Vec<&str> = item.label.split('.').collect();
+                        let ext = if parts.len() > 1 { parts.last().unwrap() } else { "---" };
+                        self.draw_text(panel_x as u32 + 8, py as u32, alloc::format!("Tipo: {}", ext).as_bytes(), Color(0x394C5D));
+                        py += 16;
+
+                        let mb = item.size / (1024 * 1024);
+                        let mb_frac = (item.size % (1024 * 1024)) * 100 / (1024 * 1024);
+                        self.draw_text(panel_x as u32 + 8, py as u32, alloc::format!("Peso: {}.{:02} MB", mb, mb_frac).as_bytes(), Color(0x394C5D));
+                        py += 16;
+                    } else if item.kind == ExplorerItemKind::Directory {
+                        self.draw_text(panel_x as u32 + 8, py as u32, b"Tipo: Carpeta", Color(0x394C5D));
+                        py += 16;
+
+                        if let Some(size) = self.explorer_side_panel_dir_size {
+                            let mb = size / (1024 * 1024);
+                            let mb_frac = (size % (1024 * 1024)) * 100 / (1024 * 1024);
+                            self.draw_text(panel_x as u32 + 8, py as u32, alloc::format!("Peso: {}.{:02} MB", mb, mb_frac).as_bytes(), Color(0x394C5D));
+                        } else {
+                            self.draw_text(panel_x as u32 + 8, py as u32, b"Peso: ---", Color(0x394C5D));
+                        }
+                        py += 16;
+                    }
+
+                    let c_year = (item.create_date >> 9) + 1980;
+                    let c_month = (item.create_date >> 5) & 0x0F;
+                    let c_day = item.create_date & 0x1F;
+                    let c_hour = item.create_time >> 11;
+                    let c_min = (item.create_time >> 5) & 0x3F;
+
+                    let w_year = (item.write_date >> 9) + 1980;
+                    let w_month = (item.write_date >> 5) & 0x0F;
+                    let w_day = item.write_date & 0x1F;
+                    let w_hour = item.write_time >> 11;
+                    let w_min = (item.write_time >> 5) & 0x3F;
+
+                    let c_str = if item.create_date == 0 {
+                        String::from("Creacion: N/A")
+                    } else {
+                        alloc::format!("Creado: {:02}/{:02}/{} {:02}:{:02}", c_day, c_month, c_year, c_hour, c_min)
+                    };
+                    self.draw_text(panel_x as u32 + 8, py as u32, c_str.as_bytes(), Color(0x394C5D));
+                    py += 16;
+
+                    let w_str = if item.write_date == 0 {
+                        String::from("Modif.: N/A")
+                    } else {
+                        alloc::format!("Modif.: {:02}/{:02}/{} {:02}:{:02}", w_day, w_month, w_year, w_hour, w_min)
+                    };
+                    self.draw_text(panel_x as u32 + 8, py as u32, w_str.as_bytes(), Color(0x394C5D));
+                }
+            }
         }
 
         let status_y = (content_h - EXPLORER_STATUS_H).max(0);
@@ -4648,6 +4779,193 @@ Tab DOCS is read-only.\n"
         };
         self.fill_rect(Rect::new(16, status_y, 8, 8), Color(status_color));
         self.draw_text(30, status_y as u32, driver_info.as_bytes(), Color(0x6B7280));
+    }
+
+    pub fn render_video_player(&mut self) {
+        if self.kind != WindowKind::VideoPlayer {
+            return;
+        }
+
+        let content_h = self.content_height();
+        if content_h <= 0 {
+            return;
+        }
+
+        let w = self.rect.width as i32;
+        let h = content_h as i32;
+
+        self.buffer.fill(0x111827);
+
+        // Ensure valid video properties
+        let vw = self.video_player_width as usize;
+        let vh = self.video_player_height as usize;
+        if vw == 0 || vh == 0 || self.video_player_file_cluster < 2 {
+            self.draw_text(20, 20, b"No video loaded", Color(0xEF4444));
+            return;
+        }
+
+        let frame_size = vw.saturating_mul(vh).saturating_mul(4);
+        if frame_size == 0 {
+            self.draw_text(20, 20, b"Invalid video frame size", Color(0xEF4444));
+            return;
+        }
+
+        let payload_bytes = (self.video_player_file_size as usize)
+            .saturating_sub(self.video_player_data_offset);
+        let max_frames = payload_bytes / frame_size;
+        if max_frames == 0 {
+            self.draw_text(20, 20, b"RPV has no complete frames", Color(0xEF4444));
+            return;
+        }
+        if self.video_player_current_frame >= max_frames {
+            self.video_player_current_frame = 0;
+        }
+
+        // Limit FPS
+        let current_tick = crate::timer::ticks();
+        let ms_per_frame = (1000 / self.video_player_fps.max(1) as u64).max(1);
+        let mut advance_frame = false;
+
+        if self.video_player_last_tick == 0 {
+            self.video_player_last_tick = current_tick;
+        } else if self.doom_native_running
+            && current_tick >= self.video_player_last_tick.saturating_add(ms_per_frame)
+        {
+            self.video_player_last_tick = current_tick;
+            advance_frame = true;
+        }
+
+        let frame_offset = self.video_player_current_frame.saturating_mul(frame_size);
+        let offset = self.video_player_data_offset.saturating_add(frame_offset);
+
+        // Reuse the frame buffer so playback does not allocate hundreds of KB
+        // on every repaint. If the file was cached on open, draw from RAM so USB
+        // latency cannot corrupt the live frame stream.
+        if self.video_player_frame_buf.len() != frame_size {
+            self.video_player_frame_buf.resize(frame_size, 0);
+        }
+        let bytes_read = match frame_offset.checked_add(frame_size) {
+            Some(end) if end <= self.video_player_cached_payload.len() => {
+                self.video_player_frame_buf.copy_from_slice(
+                    &self.video_player_cached_payload[frame_offset..end],
+                );
+                frame_size
+            }
+            _ => {
+                let fat = unsafe { &mut crate::fat32::GLOBAL_FAT };
+                fat.read_file_range(
+                    self.video_player_file_cluster,
+                    self.video_player_file_size as usize,
+                    offset,
+                    &mut self.video_player_frame_buf,
+                ).unwrap_or(0)
+            }
+        };
+
+        if bytes_read == frame_size {
+            let controls_h = 60i32.min(h.max(0));
+            let video_area_h = (h - controls_h).max(1);
+            let avail_w = w.max(1) as usize;
+            let avail_h = video_area_h.max(1) as usize;
+
+            let mut draw_w = avail_w;
+            let mut draw_h = vh.saturating_mul(draw_w).max(1) / vw.max(1);
+            if draw_h > avail_h {
+                draw_h = avail_h;
+                draw_w = vw.saturating_mul(draw_h).max(1) / vh.max(1);
+            }
+            draw_w = draw_w.max(1).min(avail_w);
+            draw_h = draw_h.max(1).min(avail_h);
+
+            let start_x = (w - draw_w as i32) / 2;
+            let start_y = (video_area_h - draw_h as i32) / 2;
+
+            // Draw scaled BGRA frame into the window buffer.
+            for dy in 0..draw_h {
+                let sy = dy.saturating_mul(vh) / draw_h.max(1);
+                for dx in 0..draw_w {
+                    let sx = dx.saturating_mul(vw) / draw_w.max(1);
+                    let idx = (sy * vw + sx) * 4;
+                    let b = self.video_player_frame_buf[idx];
+                    let g = self.video_player_frame_buf[idx + 1];
+                    let r = self.video_player_frame_buf[idx + 2];
+                    let color = ((r as u32) << 16) | ((g as u32) << 8) | (b as u32);
+                    let px = start_x + dx as i32;
+                    let py = start_y + dy as i32;
+                    if px >= 0 && py >= 0 && px < self.rect.width as i32 && py < self.rect.height as i32 {
+                        let dst_idx = py as usize * self.rect.width as usize + px as usize;
+                        if dst_idx < self.buffer.len() {
+                            self.buffer[dst_idx] = color;
+                        }
+                    }
+                }
+            }
+
+            if advance_frame {
+                self.video_player_current_frame += 1;
+                if self.video_player_current_frame >= max_frames {
+                    self.video_player_current_frame = 0; // Loop video
+                }
+            }
+        } else {
+            // EOF or error
+            if advance_frame {
+                self.video_player_current_frame = 0; // Loop video on EOF
+            }
+        }
+
+        // ── Controls Overlay ──
+        let controls_h = 60;
+        let controls_y = h - controls_h;
+        // Dark bar at the bottom
+        self.fill_rect(Rect::new(0, controls_y, w as u32, controls_h as u32), Color(0x111827));
+
+        // Progress bar
+        let bar_x = 20i32;
+        let bar_y = controls_y + 10;
+        let bar_w = (w - 40).max(60) as u32;
+        self.fill_rect(Rect::new(bar_x, bar_y, bar_w, 4), Color(0x374151));
+        let progress = if max_frames > 0 {
+            self.video_player_current_frame as f64 / max_frames as f64
+        } else {
+            0.0
+        };
+        let fill_w = (bar_w as f64 * progress) as u32;
+        self.fill_rect(Rect::new(bar_x, bar_y, fill_w, 4), Color(0x3B82F6)); // Blue progress
+
+        // Play/Pause button
+        let btn_size = 30i32;
+        let btn_x = w / 2 - btn_size / 2;
+        let btn_y = controls_y + 20;
+        self.fill_rect(Rect::new(btn_x, btn_y, btn_size as u32, btn_size as u32), Color(0x1F2937));
+        self.draw_border(Rect::new(btn_x, btn_y, btn_size as u32, btn_size as u32), Color(0x4B5563));
+
+        if self.doom_native_running {
+            self.fill_rect(Rect::new(btn_x + 8, btn_y + 8, 4, 14), Color(0xFFFFFF));
+            self.fill_rect(Rect::new(btn_x + 18, btn_y + 8, 4, 14), Color(0xFFFFFF));
+        } else {
+            for i in 0..12 {
+                let lx = btn_x + 10;
+                let ly = btn_y + 9 + i;
+                let lw = (i.min(12 - i) * 2).max(1) as u32;
+                self.fill_rect(Rect::new(lx, ly, lw, 1), Color(0xFFFFFF));
+            }
+        }
+
+        let video_name = if self.video_player_file_name.is_empty() {
+            alloc::string::String::from("DEMO_VIDEO.RPV")
+        } else {
+            self.video_player_file_name.clone()
+        };
+        self.draw_text(20, (btn_y + 8) as u32, video_name.as_bytes(), Color(0x9CA3AF));
+        let source = if self.video_player_cached_payload.is_empty() {
+            "DISK"
+        } else {
+            "RAM"
+        };
+        let info = alloc::format!("{}x{} {}fps {}", vw, vh, self.video_player_fps, source);
+        let info_x = (w - (info.len() as i32 * 6) - 20).max(20);
+        self.draw_text(info_x as u32, (btn_y + 8) as u32, info.as_bytes(), Color(0x6B7280));
     }
 
     pub fn render_wifi_manager(&mut self) {
@@ -5579,7 +5897,7 @@ Tab DOCS is read-only.\n"
         self.explorer_current_cluster = 0;
         self.explorer_device_index = None;
         self.explorer_path = String::from("Quick Access");
-        self.explorer_status = String::from("Select a storage volume to browse FAT32.");
+        self.explorer_status = String::from("Select a storage volume to browse FAT32/exFAT.");
         self.explorer_preview_lines.clear();
         self.explorer_scroll = 0;
         self.explorer_items = alloc::vec![
@@ -7219,6 +7537,7 @@ Tab DOCS is read-only.\n"
             WindowKind::LinuxBridge => {}
             WindowKind::Settings => {}
             WindowKind::MediaPlayer => {}
+            WindowKind::VideoPlayer => {}
             WindowKind::WifiManager => {
                 if self.wifi_password_editing && ch.is_ascii() && !ch.is_control() {
                     self.wifi_password_input.push(ch);
@@ -7307,6 +7626,7 @@ Tab DOCS is read-only.\n"
             WindowKind::LinuxBridge => {}
             WindowKind::Settings => {}
             WindowKind::MediaPlayer => {}
+            WindowKind::VideoPlayer => {}
             WindowKind::WifiManager => {
                 if self.wifi_password_editing && !self.wifi_password_input.is_empty() {
                     self.wifi_password_input.pop();
@@ -7382,6 +7702,7 @@ Tab DOCS is read-only.\n"
             WindowKind::LinuxBridge => None,
             WindowKind::Settings => None,
             WindowKind::MediaPlayer => None,
+            WindowKind::VideoPlayer => None,
             WindowKind::WifiManager => None,
             WindowKind::TaskManager => None,
         }

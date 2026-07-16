@@ -132,12 +132,12 @@ pub struct Phase2DynamicStageReport {
     pub sample_hash: u32,
 }
 
-struct RuntimeDynImage {
-    report: ElfInspectReport,
-    dyn_info: RuntimeRelocDynamicInfo,
-    image: Vec<u8>,
-    phdr_blob: Vec<u8>,
-    tls_block: Vec<u8>,
+pub struct RuntimeDynImage {
+    pub report: ElfInspectReport,
+    pub dyn_info: RuntimeRelocDynamicInfo,
+    pub image: Vec<u8>,
+    pub phdr_blob: Vec<u8>,
+    pub tls_block: Vec<u8>,
     tls_tcb_addr: u64,
     image_start: u64,
     image_size: u64,
@@ -175,9 +175,9 @@ pub struct LinuxDynLaunchPlan {
     pub interp_reloc_unsupported: u32,
     pub interp_reloc_errors: u32,
     pub symbol_traces: Vec<LinuxDynSymbolTrace>,
-    main_image: RuntimeDynImage,
-    interp_image: RuntimeDynImage,
-    stack_image: Vec<u8>,
+    pub main_image: RuntimeDynImage,
+    pub interp_image: RuntimeDynImage,
+    pub stack_image: Vec<u8>,
 }
 
 pub struct LinuxDynSymbolTrace {
@@ -2123,25 +2123,43 @@ fn build_linux_initial_stack(
     let execfn_ptr =
         stack_place_cstr(stack.as_mut_slice(), stack_base, &mut top, execfn_value).ok_or("stack: execfn.")?;
 
-    // X11-oriented defaults so userland GUI apps can target the internal bridge.
+    // Wayland-first defaults so userland GUI apps target the internal compositor.
     let base_env_items = [
         "LANG=C",
         "TERM=goos",
         "PATH=/",
         "GOOS=1",
         "REDUXOS=1",
+        "XDG_RUNTIME_DIR=/run/user/0",
+        "WAYLAND_DISPLAY=wayland-0",
+        "XDG_SESSION_TYPE=wayland",
         "DISPLAY=:0",
-        "XDG_SESSION_TYPE=x11",
-        // Force common GUI toolkits to prefer X11 inside the shim.
-        "GDK_BACKEND=x11",
-        "QT_QPA_PLATFORM=xcb",
-        "SDL_VIDEODRIVER=x11",
-        "WINIT_UNIX_BACKEND=x11",
-        "MOZ_ENABLE_WAYLAND=0",
-        "WAYLAND_DISPLAY=",
+        // Prefer Wayland, keep X11 fallback where supported.
+        "GDK_BACKEND=wayland,x11",
+        "QT_QPA_PLATFORM=wayland;xcb",
+        "SDL_VIDEODRIVER=wayland",
+        "WINIT_UNIX_BACKEND=wayland",
+        "MOZ_ENABLE_WAYLAND=1",
     ];
     let mut env_ptrs: Vec<u64> = Vec::new();
     for item in base_env_items.iter() {
+        let base_key_end = item.find('=').unwrap_or(item.len());
+        let base_key = &item[..base_key_end];
+        let mut overridden = false;
+        for extra in extra_env_items.iter() {
+            let trimmed = extra.trim();
+            if trimmed.is_empty() {
+                continue;
+            }
+            let extra_key_end = trimmed.find('=').unwrap_or(trimmed.len());
+            if extra_key_end == base_key.len() && &trimmed[..extra_key_end] == base_key {
+                overridden = true;
+                break;
+            }
+        }
+        if overridden {
+            continue;
+        }
         let ptr = stack_place_cstr(stack.as_mut_slice(), stack_base, &mut top, item)
             .ok_or("stack: envp.")?;
         env_ptrs.push(ptr);

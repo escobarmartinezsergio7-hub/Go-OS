@@ -1,0 +1,5 @@
+fn on_start() {
+  log("linux-wayland-qt-demo instalado.");
+  log("Terminal: linux inspect /QTWLDMO.BIN");
+  log("Terminal: linux runloop startx /QTWLDMO.BIN");
+}

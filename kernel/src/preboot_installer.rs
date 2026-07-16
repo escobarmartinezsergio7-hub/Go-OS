@@ -24,6 +24,12 @@ const ROOT_CLUSTER: u32 = 2;
 const MIN_INSTALL_SECTORS: u32 = 131_072; // 64 MiB
 const RESIZE_STEP_MIB: u32 = 128;
 const RESIZE_STEP_SECTORS: u32 = RESIZE_STEP_MIB * 2048;
+const DUAL_BOOT_TARGET_MIB: u32 = 16 * 1024;
+const DUAL_MIN_BOOT_MIB: u32 = 8 * 1024;
+const DUAL_MIN_DATA_MIB: u32 = 1024;
+const DUAL_BOOT_TARGET_SECTORS: u32 = DUAL_BOOT_TARGET_MIB * 2048;
+const DUAL_MIN_BOOT_SECTORS: u32 = DUAL_MIN_BOOT_MIB * 2048;
+const DUAL_MIN_DATA_SECTORS: u32 = DUAL_MIN_DATA_MIB * 2048;
 const RUNTIME_COPY_MAX_BYTES: usize = 256 * 1024 * 1024;
 const SERVORT_COPY_MAX_BYTES: usize = 160 * 1024 * 1024;
 const PAYLOAD_MAX_BYTES: usize = 256 * 1024 * 1024;
@@ -39,6 +45,10 @@ const GPT_MAX_ENTRY_BYTES: usize = 8 * 1024 * 1024;
 const GPT_BASIC_DATA_TYPE_GUID_LE: [u8; 16] = [
     0xA2, 0xA0, 0xD0, 0xEB, 0xE5, 0xB9, 0x33, 0x44, 0x87, 0xC0, 0x68, 0xB6, 0xB7, 0x26, 0x99,
     0xC7,
+];
+const GPT_EFI_SYSTEM_TYPE_GUID_LE: [u8; 16] = [
+    0x28, 0x73, 0x2A, 0xC1, 0x1F, 0xF8, 0xD2, 0x11, 0xBA, 0x4B, 0x00, 0xA0, 0xC9, 0x3E, 0xC9,
+    0x3B,
 ];
 
 #[derive(Clone, Copy, Default)]
@@ -80,12 +90,28 @@ struct TargetRef {
     part_idx: usize,
 }
 
+#[derive(Clone, Copy)]
+struct ArmedPartitionCreate {
+    disk_idx: usize,
+    part_idx: usize,
+    start_lba: u32,
+    total_sectors: u32,
+}
+
+struct CreatePartitionResult {
+    message: String,
+    boot_start_lba: u64,
+}
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum RuntimeBucket {
     Lib,
     Lib64,
     UsrLib,
     UsrLib64,
+    Bin,
+    Etc,
+    UsrBin,
 }
 
 #[derive(Clone)]
@@ -228,6 +254,7 @@ pub fn run() -> InstallerResult {
     crate::println("Preboot installer: enter ui loop");
     let mut selected = 0usize;
     let mut armed = false;
+    let mut partition_create_armed: Option<ArmedPartitionCreate> = None;
 
     let mut status = if let Some(err) = runtime_error.as_ref() {
         format!("ERROR: LINUXRT BUNDLE FAILED: {}", err)
@@ -236,7 +263,7 @@ pub fn run() -> InstallerResult {
     } else if disks.is_empty() {
         String::from("NO INTERNAL DISKS DETECTED. PRESS ESC TO SKIP.")
     } else if targets.is_empty() {
-        String::from("NO PARTITIONS. PRESS C TO CREATE ONE IN FREE SPACE.")
+        String::from("NO PARTITIONS. PRESS C TO CREATE 16 GIB FAT32 BOOT + REST EXFAT DATA.")
     } else {
         let boot_manager = if grub_enabled { "GRUB" } else { "REDUXEFI" };
         format!(
@@ -271,6 +298,7 @@ pub fn run() -> InstallerResult {
                 RuntimeInput::Char(ch) => match ch {
                     'n' | 'N' => {
                         armed = false;
+                        partition_create_armed = None;
                         if !targets.is_empty() {
                             selected = (selected + 1) % targets.len();
                             status = format!("SELECTED TARGET {}.", selected + 1);
@@ -279,6 +307,7 @@ pub fn run() -> InstallerResult {
                     }
                     'p' | 'P' => {
                         armed = false;
+                        partition_create_armed = None;
                         if !targets.is_empty() {
                             selected = if selected == 0 { targets.len() - 1 } else { selected - 1 };
                             status = format!("SELECTED TARGET {}.", selected + 1);
@@ -287,6 +316,7 @@ pub fn run() -> InstallerResult {
                     }
                     '1'..='9' => {
                         armed = false;
+                        partition_create_armed = None;
                         let idx = (ch as u8 - b'1') as usize;
                         if idx < targets.len() {
                             selected = idx;
@@ -296,6 +326,7 @@ pub fn run() -> InstallerResult {
                     }
                     '+' | '=' => {
                         armed = false;
+                        partition_create_armed = None;
                         match resize_selected_partition(
                             &mut disks,
                             targets.as_slice(),
@@ -316,6 +347,7 @@ pub fn run() -> InstallerResult {
                     }
                     '-' => {
                         armed = false;
+                        partition_create_armed = None;
                         match resize_selected_partition(
                             &mut disks,
                             targets.as_slice(),
@@ -342,22 +374,86 @@ pub fn run() -> InstallerResult {
                             continue;
                         }
 
+                        let selected_target = if selected < targets.len() {
+                            Some(targets[selected])
+                        } else {
+                            None
+                        };
+                        let selected_part = selected_target.map(|t| disks[t.disk_idx].partitions[t.part_idx]);
                         let disk_idx = current_disk_index(&targets, selected, &disks);
-                        match create_partition_on_disk(&mut disks, disk_idx) {
-                            Ok(msg) => {
-                                status = msg;
+                        let create_result = if let (Some(armed_create), Some(target), Some(part)) =
+                            (partition_create_armed, selected_target, selected_part)
+                        {
+                            if armed_create.disk_idx == target.disk_idx
+                                && armed_create.part_idx == target.part_idx
+                                && armed_create.start_lba == part.start_lba
+                                && armed_create.total_sectors == part.total_sectors
+                            {
+                                create_dual_partitions_from_selected(&mut disks, target)
+                            } else {
+                                Err("SELECTED TARGET CHANGED. PRESS C AGAIN TO ARM SAFE PARTITION SPLIT.")
+                            }
+                        } else if let (Some(target), Some(part)) = (selected_target, selected_part) {
+                            if !is_install_target_partition_type(part.part_type) {
+                                partition_create_armed = Some(ArmedPartitionCreate {
+                                    disk_idx: target.disk_idx,
+                                    part_idx: target.part_idx,
+                                    start_lba: part.start_lba,
+                                    total_sectors: part.total_sectors,
+                                });
+                                status = format!(
+                                    "ARMED: PRESS C AGAIN TO ERASE ONLY TARGET {} ({} MIB) AND SPLIT IT INTO FAT32 BOOT + EXFAT DATA.",
+                                    selected + 1,
+                                    part.total_sectors as u64 / 2048
+                                );
+                                status_color = STATUS_ERR;
+                                continue;
+                            }
+                            create_partition_on_disk(&mut disks, disk_idx)
+                        } else {
+                            create_partition_on_disk(&mut disks, disk_idx)
+                        };
+                        match create_result {
+                            Ok(created) => {
+                                partition_create_armed = None;
+                                status = created.message;
                                 status_color = STATUS_OK;
                                 targets = collect_targets(&disks);
-                                selected = targets.len().saturating_sub(1);
+                                selected = find_target_by_start_lba(
+                                    targets.as_slice(),
+                                    &disks,
+                                    disk_idx,
+                                    created.boot_start_lba,
+                                )
+                                .unwrap_or_else(|| targets.len().saturating_sub(1));
                             }
                             Err(err) => {
-                                status = String::from(err);
+                                partition_create_armed = selected_target.map(|target| {
+                                    let part = disks[target.disk_idx].partitions[target.part_idx];
+                                    ArmedPartitionCreate {
+                                        disk_idx: target.disk_idx,
+                                        part_idx: target.part_idx,
+                                        start_lba: part.start_lba,
+                                        total_sectors: part.total_sectors,
+                                    }
+                                });
+                                if let Some(part) = selected_part {
+                                    status = format!(
+                                        "{} PRESS C AGAIN TO ERASE ONLY SELECTED PARTITION {} ({} MIB), NOT THE WHOLE DISK.",
+                                        err,
+                                        selected + 1,
+                                        part.total_sectors as u64 / 2048
+                                    );
+                                } else {
+                                    status = format!("CREATE ERROR: {}", err);
+                                }
                                 status_color = STATUS_ERR;
                             }
                         }
                     }
                     'r' | 'R' => {
                         armed = false;
+                        partition_create_armed = None;
                         draw_bootstrap_progress("RESCAN", 35, "REFRESHING DISKS + LINUXRT + SERVORT");
                         disks = discover_internal_disks();
                         targets = collect_targets(&disks);
@@ -380,10 +476,10 @@ pub fn run() -> InstallerResult {
                         } else if disks.is_empty() {
                             String::from("NO INTERNAL DISKS DETECTED.")
                         } else if targets.is_empty() {
-                            String::from("RELOADED. NO PARTITIONS; PRESS C TO CREATE.")
+                            String::from("RELOADED. NO PARTITIONS; PRESS C TO CREATE 16 GIB FAT32 BOOT + REST EXFAT DATA.")
                         } else {
                             format!(
-                                "RELOADED DISK + PARTITION TABLES. SERVORT FILES={}.",
+                                "RELOADED. C CREATES IN FREE SPACE OR SPLITS ONLY SELECTED DATA TARGET. SERVORT FILES={}.",
                                 servort_files.len()
                             )
                         };
@@ -396,6 +492,7 @@ pub fn run() -> InstallerResult {
                     _ => {}
                 },
                 RuntimeInput::Enter => {
+                    partition_create_armed = None;
                     if let Some(err) = runtime_error.as_ref() {
                         status = format!("INSTALL BLOCKED: LINUXRT BUNDLE FAILED ({})", err);
                         status_color = STATUS_ERR;
@@ -415,6 +512,23 @@ pub fn run() -> InstallerResult {
                         continue;
                     }
 
+                    let target = targets[selected];
+                    let disk = &disks[target.disk_idx];
+                    let part = disk.partitions[target.part_idx];
+                    let paired_data_start_lba =
+                        paired_data_partition_after_boot(disk, target.part_idx).map(|p| p.start_lba as u64);
+
+                    if !is_install_target_partition_type(part.part_type) {
+                        armed = false;
+                        status = format!(
+                            "TARGET {} TYPE {:02X} IS DATA/OTHER. PRESS C TWICE TO SPLIT ONLY THIS PARTITION, OR SELECT FAT32/EFI.",
+                            selected + 1,
+                            part.part_type
+                        );
+                        status_color = STATUS_ERR;
+                        continue;
+                    }
+
                     if !armed {
                         armed = true;
                         status = format!(
@@ -424,10 +538,6 @@ pub fn run() -> InstallerResult {
                         status_color = STATUS_ERR;
                         continue;
                     }
-
-                    let target = targets[selected];
-                    let disk = &disks[target.disk_idx];
-                    let part = disk.partitions[target.part_idx];
 
 
                     status = String::from("INSTALLING [0%] PREPARING TARGET. DO NOT POWER OFF.");
@@ -471,6 +581,7 @@ pub fn run() -> InstallerResult {
                         disk.handle,
                         part.start_lba as u64,
                         part.total_sectors as u64,
+                        paired_data_start_lba,
                         payload.as_slice(),
                         grub_assets.as_ref(),
                         runtime_files.as_slice(),
@@ -550,7 +661,7 @@ fn draw_bootstrap_status(msg: &str) {
     framebuffer::draw_text_5x7(
         24,
         22,
-        "GO OS PREBOOT INSTALLER",
+        "ZENOX OS PREBOOT INSTALLER",
         rgb(220, 235, 255),
     );
     framebuffer::draw_text_5x7(24, 110, msg, rgb(196, 214, 241));
@@ -580,7 +691,7 @@ fn draw_screen(
     framebuffer::draw_text_5x7(
         24,
         20,
-        "GO OS GRAPHICAL INSTALLER (PRE-BOOT)",
+        "ZENOX OS GRAPHICAL INSTALLER (PRE-BOOT)",
         rgb(220, 235, 255),
     );
     framebuffer::draw_text_5x7(
@@ -618,7 +729,7 @@ fn draw_screen(
             framebuffer::draw_text_5x7(
                 panel_x + 14,
                 panel_y + 48,
-                "NO PARTITIONS FOUND. PRESS C TO CREATE IN FREE SPACE.",
+                "NO PARTITIONS FOUND. PRESS C TO CREATE 16 GIB FAT32 BOOT + REST EXFAT DATA.",
                 STATUS_WARN,
             );
         }
@@ -644,25 +755,22 @@ fn draw_screen(
             }
 
             let mib = part.total_sectors as u64 / 2048;
-            let line = match disk.scheme {
-                PartitionScheme::Mbr => format!(
-                    "{}. DISK {} PART {}  TYPE {:02X}  START {}  SIZE {} MIB",
-                    i + 1,
-                    tref.disk_idx + 1,
-                    tref.part_idx + 1,
-                    part.part_type,
-                    part.start_lba,
-                    mib
-                ),
-                PartitionScheme::Gpt => format!(
-                    "{}. DISK {} PART {}  TYPE GPT  START {}  SIZE {} MIB",
-                    i + 1,
-                    tref.disk_idx + 1,
-                    tref.part_idx + 1,
-                    part.start_lba,
-                    mib
-                ),
+            let scheme = match disk.scheme {
+                PartitionScheme::Mbr => "MBR",
+                PartitionScheme::Gpt => "GPT",
             };
+            let role = partition_role_label(part.part_type);
+            let line = format!(
+                "{}. DISK {} PART {}  {} {:02X} {}  START {}  SIZE {} MIB",
+                i + 1,
+                tref.disk_idx + 1,
+                tref.part_idx + 1,
+                scheme,
+                part.part_type,
+                role,
+                part.start_lba,
+                mib
+            );
             let fg = if i == selected { rgb(255, 255, 255) } else { rgb(196, 214, 241) };
             framebuffer::draw_text_5x7(panel_x + 14, y, line.as_str(), fg);
         }
@@ -677,13 +785,13 @@ fn draw_screen(
     framebuffer::draw_text_5x7(
         panel_x + 12,
         help_y,
-        "N/P MOVE  +/- RESIZE  C CREATE  R RELOAD  1-9 SELECT  ENTER INSTALL  ESC SKIP",
+        "N/P MOVE  +/- RESIZE  C CREATE/SPLIT  R RELOAD  1-9 SELECT  ENTER INSTALL  ESC SKIP",
         rgb(191, 209, 236),
     );
     framebuffer::draw_text_5x7(
         panel_x + 12,
         help_y + 14,
-        "GPT+MBR INSTALL + RESIZE + CREATE. STEP = 128 MIB.",
+        "C USES FREE SPACE; ON DATA/OTHER, C AGAIN ERASES ONLY SELECTED PARTITION. STEP = 128 MIB.",
         rgb(170, 190, 218),
     );
 
@@ -706,82 +814,61 @@ fn discover_internal_disks() -> Vec<InternalDisk> {
     crate::println("Preboot installer: block handles found");
     crate::println_num(handles.len() as u64);
 
-    let boot_device = current_boot_device_handle();
-    let mut best_non_boot: Option<(Handle, usize, u64)> = None;
-    let mut best_boot: Option<(Handle, usize, u64)> = None;
+    let mut sorted_handles: Vec<Handle> = handles.iter().copied().collect();
+    sorted_handles.sort_unstable();
 
-    for handle in handles.iter().copied() {
+    for handle in sorted_handles.iter().copied() {
         let Some((block_size, total_logical_sectors)) = describe_physical_disk(handle) else {
             continue;
         };
 
-        let is_boot_device = boot_device == Some(handle);
-        let slot = if is_boot_device {
-            &mut best_boot
+        crate::println("Preboot installer: accepted physical disk sectors");
+        crate::println_num(total_logical_sectors);
+
+        crate::println("Preboot installer: probing disk MBR");
+        let mut sector0 = [0u8; LOGICAL_SECTOR_SIZE];
+        let mbr_partitions = if read_sector_from_uefi_handle(handle, 0, &mut sector0)
+            && sector0[510] == 0x55
+            && sector0[511] == 0xAA
+        {
+            parse_mbr_partitions(&sector0)
         } else {
-            &mut best_non_boot
+            [MbrPartition::default(); 4]
         };
 
-        let should_replace = match slot {
-            Some((_, _, prev_total)) => total_logical_sectors > *prev_total,
-            None => true,
-        };
-        if should_replace {
-            *slot = Some((handle, block_size, total_logical_sectors));
+        let is_gpt = mbr_partitions.iter().any(|p| p.part_type == 0xEE);
+        if is_gpt {
+            crate::println("Preboot installer: GPT protective MBR detected");
+            let gpt_partitions = match parse_gpt_partitions(handle, block_size, total_logical_sectors) {
+                Ok(v) => v,
+                Err(_) => {
+                    crate::println("Preboot installer: GPT parse failed");
+                    Vec::new()
+                }
+            };
+            crate::println("Preboot installer: GPT partitions parsed");
+            crate::println_num(gpt_partitions.len() as u64);
+
+            out.push(InternalDisk {
+                handle,
+                block_size,
+                total_logical_sectors,
+                scheme: PartitionScheme::Gpt,
+                partitions: gpt_partitions,
+            });
+            crate::println("Preboot installer: accepted disk");
+            continue;
         }
-    }
-
-    let selected = best_non_boot.or(best_boot);
-    let Some((handle, block_size, total_logical_sectors)) = selected else {
-        return out;
-    };
-
-    crate::println("Preboot installer: selected disk sectors");
-    crate::println_num(total_logical_sectors);
-
-    crate::println("Preboot installer: probing disk MBR");
-    let mut sector0 = [0u8; LOGICAL_SECTOR_SIZE];
-    let mbr_partitions = if read_sector_from_uefi_handle(handle, 0, &mut sector0)
-        && sector0[510] == 0x55
-        && sector0[511] == 0xAA
-    {
-        parse_mbr_partitions(&sector0)
-    } else {
-        [MbrPartition::default(); 4]
-    };
-
-    let is_gpt = mbr_partitions.iter().any(|p| p.part_type == 0xEE);
-    if is_gpt {
-        crate::println("Preboot installer: GPT protective MBR detected");
-        let gpt_partitions = match parse_gpt_partitions(handle, block_size, total_logical_sectors) {
-            Ok(v) => v,
-            Err(_) => {
-                crate::println("Preboot installer: GPT parse failed");
-                Vec::new()
-            }
-        };
-        crate::println("Preboot installer: GPT partitions parsed");
-        crate::println_num(gpt_partitions.len() as u64);
 
         out.push(InternalDisk {
             handle,
             block_size,
             total_logical_sectors,
-            scheme: PartitionScheme::Gpt,
-            partitions: gpt_partitions,
+            scheme: PartitionScheme::Mbr,
+            partitions: mbr_partitions.to_vec(),
         });
         crate::println("Preboot installer: accepted disk");
-        return out;
     }
-
-    out.push(InternalDisk {
-        handle,
-        block_size,
-        total_logical_sectors,
-        scheme: PartitionScheme::Mbr,
-        partitions: mbr_partitions.to_vec(),
-    });
-    crate::println("Preboot installer: accepted disk");
 
     out
 }
@@ -1145,6 +1232,24 @@ fn gpt_write_entry(
     start_lba_native: u64,
     total_lba_native: u64,
 ) -> Result<(), &'static str> {
+    gpt_write_entry_typed(
+        meta,
+        idx,
+        start_lba_native,
+        total_lba_native,
+        GPT_BASIC_DATA_TYPE_GUID_LE,
+        "ZENOX OS",
+    )
+}
+
+fn gpt_write_entry_typed(
+    meta: &mut GptMeta,
+    idx: usize,
+    start_lba_native: u64,
+    total_lba_native: u64,
+    type_guid_le: [u8; 16],
+    name: &str,
+) -> Result<(), &'static str> {
     if start_lba_native == 0 || total_lba_native == 0 {
         return Err("GPT ENTRY RANGE INVALID.");
     }
@@ -1160,7 +1265,7 @@ fn gpt_write_entry(
         *b = 0;
     }
 
-    entry[0..16].copy_from_slice(&GPT_BASIC_DATA_TYPE_GUID_LE);
+    entry[0..16].copy_from_slice(&type_guid_le);
 
     let mut unique = [0u8; 16];
     unique[0..8].copy_from_slice(&start_lba_native.to_le_bytes());
@@ -1174,7 +1279,7 @@ fn gpt_write_entry(
     entry[32..40].copy_from_slice(&start_lba_native.to_le_bytes());
     entry[40..48].copy_from_slice(&last_lba_native.to_le_bytes());
     entry[48..56].copy_from_slice(&0u64.to_le_bytes());
-    gpt_write_name(entry, "GO OS");
+    gpt_write_name(entry, name);
 
     Ok(())
 }
@@ -1383,9 +1488,16 @@ fn parse_gpt_partitions(
             continue;
         }
 
+        let mut part_type = 0xEE;
+        if entry.len() >= 16 && entry[0..16] == GPT_EFI_SYSTEM_TYPE_GUID_LE {
+            part_type = 0xEF;
+        } else if entry.len() >= 16 && entry[0..16] == GPT_BASIC_DATA_TYPE_GUID_LE {
+            part_type = 0x07;
+        }
+
         out.push(MbrPartition {
             boot: 0,
-            part_type: 0xEE,
+            part_type,
             start_lba: first as u32,
             total_sectors: total as u32,
         });
@@ -1467,6 +1579,7 @@ fn collect_targets(disks: &[InternalDisk]) -> Vec<TargetRef> {
         while p < disk.partitions.len() {
             let part = disk.partitions[p];
             if part.is_used()
+                && is_visible_partition_for_selection(disk.scheme, part.part_type)
                 && part.start_lba >= 1
                 && part.total_sectors >= MIN_INSTALL_SECTORS
                 && part.end_exclusive() <= disk_limit
@@ -1492,6 +1605,43 @@ fn collect_targets(disks: &[InternalDisk]) -> Vec<TargetRef> {
     out
 }
 
+fn is_visible_partition_for_selection(scheme: PartitionScheme, part_type: u8) -> bool {
+    if part_type == 0 {
+        return false;
+    }
+    if scheme == PartitionScheme::Mbr && part_type == 0xEE {
+        return false;
+    }
+    true
+}
+
+fn is_install_target_partition_type(part_type: u8) -> bool {
+    part_type == 0x0B || part_type == 0x0C || part_type == 0xEF
+}
+
+fn partition_role_label(part_type: u8) -> &'static str {
+    if is_install_target_partition_type(part_type) {
+        "BOOT"
+    } else if part_type == 0x07 {
+        "DATA"
+    } else {
+        "OTHER"
+    }
+}
+
+fn paired_data_partition_after_boot(disk: &InternalDisk, boot_part_idx: usize) -> Option<MbrPartition> {
+    let boot_part = *disk.partitions.get(boot_part_idx)?;
+    if !boot_part.is_used() || !is_install_target_partition_type(boot_part.part_type) {
+        return None;
+    }
+
+    let expected_start = boot_part.end_exclusive();
+    disk.partitions
+        .iter()
+        .copied()
+        .find(|part| part.is_used() && part.part_type == 0x07 && part.start_lba == expected_start)
+}
+
 fn refresh_selection(selected: &mut usize, len: usize) {
     if len == 0 {
         *selected = 0;
@@ -1508,6 +1658,26 @@ fn current_disk_index(targets: &[TargetRef], selected: usize, disks: &[InternalD
         return targets[selected].disk_idx;
     }
     core::cmp::min(targets[0].disk_idx, disks.len().saturating_sub(1))
+}
+
+fn find_target_by_start_lba(
+    targets: &[TargetRef],
+    disks: &[InternalDisk],
+    disk_idx: usize,
+    start_lba: u64,
+) -> Option<usize> {
+    let mut i = 0usize;
+    while i < targets.len() {
+        let target = targets[i];
+        if target.disk_idx == disk_idx {
+            let part = disks[target.disk_idx].partitions[target.part_idx];
+            if part.start_lba as u64 == start_lba {
+                return Some(i);
+            }
+        }
+        i += 1;
+    }
+    None
 }
 
 fn resize_selected_partition(
@@ -1602,29 +1772,30 @@ fn resize_selected_partition(
     Ok(msg)
 }
 
-fn create_partition_on_disk(disks: &mut [InternalDisk], disk_idx: usize) -> Result<String, &'static str> {
+fn create_partition_on_disk(disks: &mut [InternalDisk], disk_idx: usize) -> Result<CreatePartitionResult, &'static str> {
     if disk_idx >= disks.len() {
         return Err("INVALID DISK INDEX.");
     }
 
     let mut disk = disks[disk_idx].clone();
-    if disk.scheme != PartitionScheme::Mbr {
-        return Err("GPT CREATE NOT IMPLEMENTED YET. INSTALL TO EXISTING GPT PARTITIONS.");
+    if disk.scheme == PartitionScheme::Gpt {
+        return create_dual_gpt_partitions_on_disk(disks, disk_idx);
     }
 
-    let mut empty_slot = None;
+    let mut empty_slots = Vec::new();
     let mut i = 0usize;
     while i < disk.partitions.len() {
         if !disk.partitions[i].is_used() {
-            empty_slot = Some(i);
-            break;
+            empty_slots.push(i);
         }
         i += 1;
     }
 
-    let Some(slot) = empty_slot else {
-        return Err("NO FREE MBR SLOT. MAX 4 PRIMARY PARTITIONS.");
-    };
+    if empty_slots.len() < 2 {
+        return Err("NEED TWO FREE MBR SLOTS FOR 16 GIB FAT32 BOOT + EXFAT DATA.");
+    }
+    let boot_slot = empty_slots[0];
+    let data_slot = empty_slots[1];
 
     let (gap_start, gap_end) = find_largest_free_gap(&disk)?;
     let aligned_start = align_up_u32(gap_start, 2048);
@@ -1636,24 +1807,615 @@ fn create_partition_on_disk(disks: &mut [InternalDisk], disk_idx: usize) -> Resu
     if size < MIN_INSTALL_SECTORS {
         return Err("LARGEST FREE SPACE IS SMALLER THAN 64 MIB.");
     }
+    let (boot_sectors, data_sectors) = choose_dual_partition_sectors(size)?;
+    let data_start = aligned_start
+        .checked_add(boot_sectors)
+        .ok_or("DUAL PARTITION START OVERFLOW.")?;
 
-    disk.partitions[slot] = MbrPartition {
+    disk.partitions[boot_slot] = MbrPartition {
         boot: 0,
         part_type: 0x0C,
         start_lba: aligned_start,
-        total_sectors: size,
+        total_sectors: boot_sectors,
+    };
+    disk.partitions[data_slot] = MbrPartition {
+        boot: 0,
+        part_type: 0x07,
+        start_lba: data_start,
+        total_sectors: data_sectors,
     };
 
     let mbr = mbr_slots_from_disk(&disk)?;
     write_mbr_table(disk.handle, &mbr)?;
+    format_exfat_partition(disk.handle, data_start as u64, data_sectors as u64, "ZENOX DATA")?;
     disks[disk_idx] = disk;
 
-    Ok(format!(
-        "CREATE OK: DISK {} PART {} CREATED ({} MIB).",
-        disk_idx + 1,
-        slot + 1,
-        size as u64 / 2048
-    ))
+    Ok(CreatePartitionResult {
+        message: format!(
+            "CREATE OK: DISK {} PART {} FAT32 BOOT ({} MIB) + PART {} EXFAT DATA ({} MIB).",
+            disk_idx + 1,
+            boot_slot + 1,
+            boot_sectors as u64 / 2048,
+            data_slot + 1,
+            data_sectors as u64 / 2048
+        ),
+        boot_start_lba: aligned_start as u64,
+    })
+}
+
+fn create_dual_partitions_from_selected(
+    disks: &mut [InternalDisk],
+    target: TargetRef,
+) -> Result<CreatePartitionResult, &'static str> {
+    if target.disk_idx >= disks.len() {
+        return Err("INVALID DISK INDEX.");
+    }
+    if target.part_idx >= disks[target.disk_idx].partitions.len() {
+        return Err("INVALID PARTITION INDEX.");
+    }
+
+    if disks[target.disk_idx].scheme == PartitionScheme::Gpt {
+        create_dual_gpt_partitions_from_selected(disks, target)
+    } else {
+        create_dual_mbr_partitions_from_selected(disks, target)
+    }
+}
+
+fn create_dual_mbr_partitions_from_selected(
+    disks: &mut [InternalDisk],
+    target: TargetRef,
+) -> Result<CreatePartitionResult, &'static str> {
+    let mut disk = disks[target.disk_idx].clone();
+    if target.part_idx >= disk.partitions.len() {
+        return Err("INVALID MBR PARTITION INDEX.");
+    }
+
+    let selected = disk.partitions[target.part_idx];
+    if !selected.is_used() {
+        return Err("SELECTED PARTITION IS EMPTY.");
+    }
+    if selected.total_sectors < MIN_INSTALL_SECTORS {
+        return Err("SELECTED PARTITION IS TOO SMALL.");
+    }
+
+    let mut data_slot = None;
+    let mut i = 0usize;
+    while i < disk.partitions.len() {
+        if i != target.part_idx && !disk.partitions[i].is_used() {
+            data_slot = Some(i);
+            break;
+        }
+        i += 1;
+    }
+    let data_slot = data_slot.ok_or("NEED ONE FREE MBR SLOT TO SPLIT SELECTED PARTITION.")?;
+
+    let (boot_sectors, data_sectors) = choose_dual_partition_sectors(selected.total_sectors)?;
+    let data_start = selected
+        .start_lba
+        .checked_add(boot_sectors)
+        .ok_or("SELECTED PARTITION SPLIT OVERFLOW.")?;
+
+    disk.partitions[target.part_idx] = MbrPartition {
+        boot: 0,
+        part_type: 0x0C,
+        start_lba: selected.start_lba,
+        total_sectors: boot_sectors,
+    };
+    disk.partitions[data_slot] = MbrPartition {
+        boot: 0,
+        part_type: 0x07,
+        start_lba: data_start,
+        total_sectors: data_sectors,
+    };
+
+    let mbr = mbr_slots_from_disk(&disk)?;
+    write_mbr_table(disk.handle, &mbr)?;
+    format_exfat_partition(disk.handle, data_start as u64, data_sectors as u64, "ZENOX DATA")?;
+    disks[target.disk_idx] = disk;
+
+    Ok(CreatePartitionResult {
+        message: format!(
+            "SPLIT OK: ONLY DISK {} PART {} WAS ERASED. FAT32 BOOT {} MIB + EXFAT DATA {} MIB.",
+            target.disk_idx + 1,
+            target.part_idx + 1,
+            boot_sectors as u64 / 2048,
+            data_sectors as u64 / 2048
+        ),
+        boot_start_lba: selected.start_lba as u64,
+    })
+}
+
+fn create_dual_gpt_partitions_from_selected(
+    disks: &mut [InternalDisk],
+    target: TargetRef,
+) -> Result<CreatePartitionResult, &'static str> {
+    let disk = disks[target.disk_idx].clone();
+    if target.part_idx >= disk.partitions.len() {
+        return Err("INVALID GPT PARTITION INDEX.");
+    }
+
+    let selected = disk.partitions[target.part_idx];
+    if !selected.is_used() {
+        return Err("SELECTED GPT PARTITION IS EMPTY.");
+    }
+
+    let mut meta = load_gpt_meta(&disk)?;
+    let selected_start_native = sectors512_to_native_exact(selected.start_lba, meta.lba_mul)?;
+    let selected_total_native = sectors512_to_native_exact(selected.total_sectors, meta.lba_mul)?;
+    let selected_last_native = selected_start_native
+        .checked_add(selected_total_native.saturating_sub(1))
+        .ok_or("SELECTED GPT PARTITION OVERFLOW.")?;
+
+    let mut selected_entry_idx = None;
+    let mut empty_entry_idx = None;
+    let mut i = 0usize;
+    while i < meta.entry_count {
+        let off = i
+            .checked_mul(meta.entry_size)
+            .ok_or("GPT ENTRY OFFSET OVERFLOW.")?;
+        let end = off
+            .checked_add(meta.entry_size)
+            .ok_or("GPT ENTRY END OVERFLOW.")?;
+        if end > meta.entries.len() {
+            break;
+        }
+        let entry = &meta.entries[off..end];
+        if !gpt_entry_is_used(entry) {
+            if empty_entry_idx.is_none() {
+                empty_entry_idx = Some(i);
+            }
+            i += 1;
+            continue;
+        }
+
+        let first = read_u64_le(entry, 32).ok_or("GPT ENTRY FIRST LBA MISSING.")?;
+        let last = read_u64_le(entry, 40).ok_or("GPT ENTRY LAST LBA MISSING.")?;
+        if first == selected_start_native && last == selected_last_native {
+            selected_entry_idx = Some(i);
+        }
+        i += 1;
+    }
+
+    let selected_entry_idx =
+        selected_entry_idx.ok_or("SELECTED GPT PARTITION ENTRY NOT FOUND.")?;
+    let empty_entry_idx =
+        empty_entry_idx.ok_or("NEED ONE FREE GPT ENTRY TO SPLIT SELECTED PARTITION.")?;
+
+    let (boot_512, data_512) = choose_dual_partition_sectors(selected.total_sectors)?;
+    let boot_native = sectors512_to_native_exact(boot_512, meta.lba_mul)?;
+    let data_native = sectors512_to_native_exact(data_512, meta.lba_mul)?;
+    let data_start_native = selected_start_native
+        .checked_add(boot_native)
+        .ok_or("GPT SELECTED DATA START OVERFLOW.")?;
+    if data_start_native
+        .checked_add(data_native)
+        .ok_or("GPT SELECTED DATA END OVERFLOW.")?
+        .saturating_sub(1)
+        > selected_last_native
+    {
+        return Err("GPT SELECTED SPLIT DOES NOT FIT.");
+    }
+
+    gpt_write_entry_typed(
+        &mut meta,
+        selected_entry_idx,
+        selected_start_native,
+        boot_native,
+        GPT_EFI_SYSTEM_TYPE_GUID_LE,
+        "ZENOX OS",
+    )?;
+    gpt_write_entry_typed(
+        &mut meta,
+        empty_entry_idx,
+        data_start_native,
+        data_native,
+        GPT_BASIC_DATA_TYPE_GUID_LE,
+        "ZENOX DATA",
+    )?;
+    gpt_write_tables(disk.handle, &mut meta)?;
+
+    let data_start_512 = data_start_native
+        .checked_mul(meta.lba_mul)
+        .ok_or("GPT DATA START CONVERSION OVERFLOW.")?;
+    let data_total_512 = data_native
+        .checked_mul(meta.lba_mul)
+        .ok_or("GPT DATA SIZE CONVERSION OVERFLOW.")?;
+    format_exfat_partition(disk.handle, data_start_512, data_total_512, "ZENOX DATA")?;
+
+    let refreshed = parse_gpt_partitions(disk.handle, disk.block_size, disk.total_logical_sectors)
+        .unwrap_or_else(|_| {
+            let mut fallback = disk.partitions.clone();
+            fallback[target.part_idx] = MbrPartition {
+                boot: 0,
+                part_type: 0xEF,
+                start_lba: selected.start_lba,
+                total_sectors: boot_512,
+            };
+            fallback.push(MbrPartition {
+                boot: 0,
+                part_type: 0x07,
+                start_lba: data_start_512 as u32,
+                total_sectors: data_512,
+            });
+            fallback.sort_by(|a, b| a.start_lba.cmp(&b.start_lba));
+            fallback
+        });
+
+    disks[target.disk_idx] = InternalDisk {
+        handle: disk.handle,
+        block_size: disk.block_size,
+        total_logical_sectors: disk.total_logical_sectors,
+        scheme: PartitionScheme::Gpt,
+        partitions: refreshed,
+    };
+
+    Ok(CreatePartitionResult {
+        message: format!(
+            "SPLIT OK: ONLY GPT TARGET {} WAS ERASED. FAT32 BOOT {} MIB + EXFAT DATA {} MIB.",
+            target.part_idx + 1,
+            boot_512 as u64 / 2048,
+            data_512 as u64 / 2048
+        ),
+        boot_start_lba: selected.start_lba as u64,
+    })
+}
+
+fn create_dual_partitions_on_whole_disk(
+    disks: &mut [InternalDisk],
+    disk_idx: usize,
+) -> Result<CreatePartitionResult, &'static str> {
+    if disk_idx >= disks.len() {
+        return Err("INVALID DISK INDEX.");
+    }
+    if disks[disk_idx].scheme == PartitionScheme::Gpt {
+        create_dual_gpt_partitions_on_whole_disk(disks, disk_idx)
+    } else {
+        create_dual_mbr_partitions_on_whole_disk(disks, disk_idx)
+    }
+}
+
+fn create_dual_mbr_partitions_on_whole_disk(
+    disks: &mut [InternalDisk],
+    disk_idx: usize,
+) -> Result<CreatePartitionResult, &'static str> {
+    let mut disk = disks[disk_idx].clone();
+    let disk_limit = core::cmp::min(disk.total_logical_sectors, u32::MAX as u64) as u32;
+    let aligned_start = 2048u32;
+    if disk_limit <= aligned_start {
+        return Err("DISK TOO SMALL FOR 8 GIB FAT32 BOOT + EXFAT DATA.");
+    }
+
+    let total = disk_limit.saturating_sub(aligned_start);
+    let (boot_sectors, data_sectors) = choose_dual_partition_sectors(total)?;
+    let data_start = aligned_start
+        .checked_add(boot_sectors)
+        .ok_or("DUAL PARTITION START OVERFLOW.")?;
+
+    let mut partitions = [MbrPartition::default(); 4];
+    partitions[0] = MbrPartition {
+        boot: 0,
+        part_type: 0x0C,
+        start_lba: aligned_start,
+        total_sectors: boot_sectors,
+    };
+    partitions[1] = MbrPartition {
+        boot: 0,
+        part_type: 0x07,
+        start_lba: data_start,
+        total_sectors: data_sectors,
+    };
+
+    write_mbr_table(disk.handle, &partitions)?;
+    format_exfat_partition(disk.handle, data_start as u64, data_sectors as u64, "ZENOX DATA")?;
+
+    let mut refreshed = Vec::new();
+    refreshed.extend_from_slice(&partitions);
+    disk.partitions = refreshed;
+    disks[disk_idx] = disk;
+
+    Ok(CreatePartitionResult {
+        message: format!(
+            "FORMAT OK: DISK {} ERASED. FAT32 BOOT {} MIB + EXFAT DATA {} MIB.",
+            disk_idx + 1,
+            boot_sectors as u64 / 2048,
+            data_sectors as u64 / 2048
+        ),
+        boot_start_lba: aligned_start as u64,
+    })
+}
+
+fn create_dual_gpt_partitions_on_whole_disk(
+    disks: &mut [InternalDisk],
+    disk_idx: usize,
+) -> Result<CreatePartitionResult, &'static str> {
+    let disk = disks[disk_idx].clone();
+    let mut meta = load_gpt_meta(&disk)?;
+    if meta.entry_count < 2 {
+        return Err("GPT NEEDS TWO ENTRIES FOR 16 GIB FAT32 BOOT + EXFAT DATA.");
+    }
+
+    for b in meta.entries.iter_mut() {
+        *b = 0;
+    }
+
+    let align_native = core::cmp::max(1, 2048u64 / meta.lba_mul.max(1));
+    let boot_start_native = align_up_u64(meta.first_usable_lba_native, align_native);
+    let disk_end_native = meta.last_usable_lba_native.saturating_add(1);
+    if disk_end_native <= boot_start_native {
+        return Err("GPT DISK TOO SMALL AFTER ALIGNMENT.");
+    }
+
+    let total_512 = disk_end_native
+        .saturating_sub(boot_start_native)
+        .checked_mul(meta.lba_mul)
+        .ok_or("GPT DISK SIZE OVERFLOW.")?;
+    if total_512 > u32::MAX as u64 {
+        return Err("GPT DISK TOO LARGE FOR PREBOOT DUAL CREATOR.");
+    }
+
+    let (boot_512, data_512) = choose_dual_partition_sectors(total_512 as u32)?;
+    let boot_native = sectors512_to_native_exact(boot_512, meta.lba_mul)?;
+    let data_native = sectors512_to_native_exact(data_512, meta.lba_mul)?;
+    let data_start_native = boot_start_native
+        .checked_add(boot_native)
+        .ok_or("GPT DATA START OVERFLOW.")?;
+    if data_start_native
+        .checked_add(data_native)
+        .ok_or("GPT DATA END OVERFLOW.")?
+        > disk_end_native
+    {
+        return Err("GPT DUAL LAYOUT DOES NOT FIT.");
+    }
+
+    gpt_write_entry_typed(
+        &mut meta,
+        0,
+        boot_start_native,
+        boot_native,
+        GPT_EFI_SYSTEM_TYPE_GUID_LE,
+        "ZENOX OS",
+    )?;
+    gpt_write_entry_typed(
+        &mut meta,
+        1,
+        data_start_native,
+        data_native,
+        GPT_BASIC_DATA_TYPE_GUID_LE,
+        "ZENOX DATA",
+    )?;
+    gpt_write_tables(disk.handle, &mut meta)?;
+
+    let boot_start_512 = boot_start_native
+        .checked_mul(meta.lba_mul)
+        .ok_or("GPT BOOT START CONVERSION OVERFLOW.")?;
+    let data_start_512 = data_start_native
+        .checked_mul(meta.lba_mul)
+        .ok_or("GPT DATA START CONVERSION OVERFLOW.")?;
+    let data_total_512 = data_native
+        .checked_mul(meta.lba_mul)
+        .ok_or("GPT DATA SIZE CONVERSION OVERFLOW.")?;
+    format_exfat_partition(disk.handle, data_start_512, data_total_512, "ZENOX DATA")?;
+
+    let refreshed = parse_gpt_partitions(disk.handle, disk.block_size, disk.total_logical_sectors)
+        .unwrap_or_else(|_| {
+            let mut fallback = Vec::new();
+            fallback.push(MbrPartition {
+                boot: 0,
+                part_type: 0xEF,
+                start_lba: boot_start_512 as u32,
+                total_sectors: boot_512,
+            });
+            fallback.push(MbrPartition {
+                boot: 0,
+                part_type: 0x07,
+                start_lba: data_start_512 as u32,
+                total_sectors: data_512,
+            });
+            fallback
+        });
+
+    disks[disk_idx] = InternalDisk {
+        handle: disk.handle,
+        block_size: disk.block_size,
+        total_logical_sectors: disk.total_logical_sectors,
+        scheme: PartitionScheme::Gpt,
+        partitions: refreshed,
+    };
+
+    Ok(CreatePartitionResult {
+        message: format!(
+            "FORMAT OK: GPT DISK {} ERASED. FAT32 BOOT {} MIB + EXFAT DATA {} MIB.",
+            disk_idx + 1,
+            boot_512 as u64 / 2048,
+            data_512 as u64 / 2048
+        ),
+        boot_start_lba: boot_start_512,
+    })
+}
+
+fn choose_dual_partition_sectors(total: u32) -> Result<(u32, u32), &'static str> {
+    let min_total = DUAL_MIN_BOOT_SECTORS
+        .checked_add(DUAL_MIN_DATA_SECTORS)
+        .ok_or("DUAL SIZE OVERFLOW.")?;
+    if total < min_total {
+        return Err("FREE SPACE TOO SMALL FOR 8 GIB FAT32 BOOT + EXFAT DATA.");
+    }
+
+    let mut boot = if total >= DUAL_BOOT_TARGET_SECTORS.saturating_add(DUAL_MIN_DATA_SECTORS) {
+        DUAL_BOOT_TARGET_SECTORS
+    } else {
+        total.saturating_sub(DUAL_MIN_DATA_SECTORS)
+    };
+    boot = round_down_to_multiple_u32(boot, 2048);
+    if boot < DUAL_MIN_BOOT_SECTORS {
+        boot = DUAL_MIN_BOOT_SECTORS;
+    }
+    if total.saturating_sub(boot) < DUAL_MIN_DATA_SECTORS {
+        boot = total.saturating_sub(DUAL_MIN_DATA_SECTORS);
+        boot = round_down_to_multiple_u32(boot, 2048);
+    }
+    let data = total.saturating_sub(boot);
+    if boot < DUAL_MIN_BOOT_SECTORS || data < DUAL_MIN_DATA_SECTORS {
+        return Err("FREE SPACE TOO SMALL FOR 8 GIB FAT32 BOOT + EXFAT DATA.");
+    }
+    Ok((boot, data))
+}
+
+fn align_up_u64(value: u64, align: u64) -> u64 {
+    if align <= 1 {
+        return value;
+    }
+    let rem = value % align;
+    if rem == 0 {
+        value
+    } else {
+        value.saturating_add(align - rem)
+    }
+}
+
+fn create_dual_gpt_partitions_on_disk(disks: &mut [InternalDisk], disk_idx: usize) -> Result<CreatePartitionResult, &'static str> {
+    let disk = disks[disk_idx].clone();
+    let mut meta = load_gpt_meta(&disk)?;
+
+    let mut empty = Vec::new();
+    let mut idx = 0usize;
+    while idx < meta.entry_count {
+        let off = idx * meta.entry_size;
+        let end = off + meta.entry_size;
+        if end > meta.entries.len() {
+            break;
+        }
+        if !gpt_entry_is_used(&meta.entries[off..end]) {
+            empty.push(idx);
+            if empty.len() >= 2 {
+                break;
+            }
+        }
+        idx += 1;
+    }
+    if empty.len() < 2 {
+        return Err("NEED TWO FREE GPT ENTRIES FOR 16 GIB FAT32 BOOT + EXFAT DATA.");
+    }
+
+    let align_native = core::cmp::max(1, 2048u64 / meta.lba_mul.max(1));
+    let used = gpt_used_entries_sorted(&meta);
+    let mut best_start = 0u64;
+    let mut best_end = 0u64;
+    let mut cursor = align_up_u64(meta.first_usable_lba_native, align_native);
+
+    for (_entry_idx, first) in used.iter().copied() {
+        if first > cursor {
+            let gap_start = cursor;
+            let gap_end = first;
+            if gap_end.saturating_sub(gap_start) > best_end.saturating_sub(best_start) {
+                best_start = gap_start;
+                best_end = gap_end;
+            }
+        }
+        let entry = gpt_entry_mut(&mut meta, _entry_idx)?;
+        let last = read_u64_le(entry, 40).ok_or("GPT ENTRY LAST LBA MISSING.")?;
+        if last.saturating_add(1) > cursor {
+            cursor = align_up_u64(last.saturating_add(1), align_native);
+        }
+    }
+
+    let tail_end = meta.last_usable_lba_native.saturating_add(1);
+    if tail_end > cursor
+        && tail_end.saturating_sub(cursor) > best_end.saturating_sub(best_start)
+    {
+        best_start = cursor;
+        best_end = tail_end;
+    }
+
+    if best_end <= best_start {
+        return Err("NO GPT FREE SPACE AVAILABLE.");
+    }
+
+    let gap_native = best_end.saturating_sub(best_start);
+    let gap_512 = gap_native
+        .checked_mul(meta.lba_mul)
+        .ok_or("GPT GAP SIZE OVERFLOW.")?;
+    if gap_512 > u32::MAX as u64 {
+        return Err("GPT FREE GAP TOO LARGE FOR PREBOOT DUAL CREATOR.");
+    }
+    let (boot_512, data_512) = choose_dual_partition_sectors(gap_512 as u32)?;
+    let boot_native = sectors512_to_native_exact(boot_512, meta.lba_mul)?;
+    let data_native = sectors512_to_native_exact(data_512, meta.lba_mul)?;
+    let boot_start_512 = best_start
+        .checked_mul(meta.lba_mul)
+        .ok_or("GPT BOOT START CONVERSION OVERFLOW.")?;
+    let data_start_native = best_start
+        .checked_add(boot_native)
+        .ok_or("GPT DATA START OVERFLOW.")?;
+    if data_start_native
+        .checked_add(data_native)
+        .ok_or("GPT DATA END OVERFLOW.")?
+        > best_end
+    {
+        return Err("GPT DUAL LAYOUT DOES NOT FIT.");
+    }
+
+    gpt_write_entry_typed(
+        &mut meta,
+        empty[0],
+        best_start,
+        boot_native,
+        GPT_EFI_SYSTEM_TYPE_GUID_LE,
+        "ZENOX OS",
+    )?;
+    gpt_write_entry_typed(
+        &mut meta,
+        empty[1],
+        data_start_native,
+        data_native,
+        GPT_BASIC_DATA_TYPE_GUID_LE,
+        "ZENOX DATA",
+    )?;
+    gpt_write_tables(disk.handle, &mut meta)?;
+
+    let data_start_512 = data_start_native
+        .checked_mul(meta.lba_mul)
+        .ok_or("GPT DATA START CONVERSION OVERFLOW.")?;
+    let data_total_512 = data_native
+        .checked_mul(meta.lba_mul)
+        .ok_or("GPT DATA SIZE CONVERSION OVERFLOW.")?;
+    format_exfat_partition(disk.handle, data_start_512, data_total_512, "ZENOX DATA")?;
+
+    let refreshed = parse_gpt_partitions(disk.handle, disk.block_size, disk.total_logical_sectors)
+        .unwrap_or_else(|_| {
+            let mut fallback = disk.partitions.clone();
+            fallback.push(MbrPartition {
+                boot: 0,
+                part_type: 0xEF,
+                start_lba: (best_start * meta.lba_mul) as u32,
+                total_sectors: boot_512,
+            });
+            fallback.push(MbrPartition {
+                boot: 0,
+                part_type: 0x07,
+                start_lba: data_start_512 as u32,
+                total_sectors: data_512,
+            });
+            fallback
+        });
+
+    disks[disk_idx] = InternalDisk {
+        handle: disk.handle,
+        block_size: disk.block_size,
+        total_logical_sectors: disk.total_logical_sectors,
+        scheme: PartitionScheme::Gpt,
+        partitions: refreshed,
+    };
+
+    Ok(CreatePartitionResult {
+        message: format!(
+            "CREATE OK: GPT DISK {} FAT32 BOOT {} MIB + EXFAT DATA {} MIB.",
+            disk_idx + 1,
+            boot_512 as u64 / 2048,
+            data_512 as u64 / 2048
+        ),
+        boot_start_lba: boot_start_512,
+    })
 }
 
 fn find_largest_free_gap(disk: &InternalDisk) -> Result<(u32, u32), &'static str> {
@@ -1820,6 +2582,9 @@ fn runtime_bucket_dir_name(bucket: RuntimeBucket) -> &'static str {
         RuntimeBucket::Lib64 => "LIB64",
         RuntimeBucket::UsrLib => "USR\\LIB",
         RuntimeBucket::UsrLib64 => "USR\\LIB64",
+        RuntimeBucket::Bin => "BIN",
+        RuntimeBucket::Etc => "ETC",
+        RuntimeBucket::UsrBin => "USR\\BIN",
     }
 }
 
@@ -1839,8 +2604,14 @@ fn runtime_bucket_from_source_path(source_path: &str) -> RuntimeBucket {
         RuntimeBucket::UsrLib64
     } else if normalized.starts_with("usr/lib/") || normalized.contains("/usr/lib/") {
         RuntimeBucket::UsrLib
+    } else if normalized.starts_with("usr/bin/") || normalized.contains("/usr/bin/") {
+        RuntimeBucket::UsrBin
     } else if normalized.starts_with("lib64/") || normalized.contains("/lib64/") {
         RuntimeBucket::Lib64
+    } else if normalized.starts_with("bin/") || normalized.contains("/bin/") {
+        RuntimeBucket::Bin
+    } else if normalized.starts_with("etc/") || normalized.contains("/etc/") {
+        RuntimeBucket::Etc
     } else {
         RuntimeBucket::Lib
     }
@@ -2218,6 +2989,30 @@ fn load_runtime_from_boot_fs_fallback_scan(fs: &mut UefiFileSystem) -> Vec<Runti
         &mut out,
         &mut total_bytes,
     );
+    scan_runtime_bucket_dir(
+        fs,
+        "\\LINUXRT\\BIN",
+        "bin",
+        RuntimeBucket::Bin,
+        &mut out,
+        &mut total_bytes,
+    );
+    scan_runtime_bucket_dir(
+        fs,
+        "\\LINUXRT\\ETC",
+        "etc",
+        RuntimeBucket::Etc,
+        &mut out,
+        &mut total_bytes,
+    );
+    scan_runtime_bucket_dir(
+        fs,
+        "\\LINUXRT\\USR\\BIN",
+        "usr/bin",
+        RuntimeBucket::UsrBin,
+        &mut out,
+        &mut total_bytes,
+    );
 
     out
 }
@@ -2351,6 +3146,8 @@ fn runtime_bucket_cluster_on_global_fat(
     match bucket {
         RuntimeBucket::Lib => runtime_find_dir_on_global_fat(fat, linuxrt_root, "LIB"),
         RuntimeBucket::Lib64 => runtime_find_dir_on_global_fat(fat, linuxrt_root, "LIB64"),
+        RuntimeBucket::Bin => runtime_find_dir_on_global_fat(fat, linuxrt_root, "BIN"),
+        RuntimeBucket::Etc => runtime_find_dir_on_global_fat(fat, linuxrt_root, "ETC"),
         RuntimeBucket::UsrLib => {
             let usr = runtime_find_dir_on_global_fat(fat, linuxrt_root, "USR")?;
             runtime_find_dir_on_global_fat(fat, usr, "LIB")
@@ -2358,6 +3155,10 @@ fn runtime_bucket_cluster_on_global_fat(
         RuntimeBucket::UsrLib64 => {
             let usr = runtime_find_dir_on_global_fat(fat, linuxrt_root, "USR")?;
             runtime_find_dir_on_global_fat(fat, usr, "LIB64")
+        }
+        RuntimeBucket::UsrBin => {
+            let usr = runtime_find_dir_on_global_fat(fat, linuxrt_root, "USR")?;
+            runtime_find_dir_on_global_fat(fat, usr, "BIN")
         }
     }
 }
@@ -2443,6 +3244,9 @@ fn load_runtime_from_fat_instance(fat: &mut crate::fat32::Fat32) -> Vec<RuntimeI
         (RuntimeBucket::Lib64, "lib64"),
         (RuntimeBucket::UsrLib, "usr/lib"),
         (RuntimeBucket::UsrLib64, "usr/lib64"),
+        (RuntimeBucket::Bin, "bin"),
+        (RuntimeBucket::Etc, "etc"),
+        (RuntimeBucket::UsrBin, "usr/bin"),
     ];
 
     for (bucket, source_prefix) in buckets.iter().copied() {
@@ -2529,6 +3333,9 @@ fn load_runtime_from_embedded_bundle() -> Result<Vec<RuntimeInstallFile>, &'stat
             1 => RuntimeBucket::Lib64,
             2 => RuntimeBucket::UsrLib,
             3 => RuntimeBucket::UsrLib64,
+            4 => RuntimeBucket::Bin,
+            5 => RuntimeBucket::Etc,
+            6 => RuntimeBucket::UsrBin,
             _ => RuntimeBucket::Lib,
         };
         cursor += 1;
@@ -3074,7 +3881,7 @@ fn default_grub_config_payload() -> Vec<u8> {
     b"set timeout=8\r\n\
 set default=0\r\n\
 \r\n\
-menuentry \"Go OS\" {\r\n\
+menuentry \"Zenox OS\" {\r\n\
     if search --no-floppy --file --set=reduxroot /EFI/BOOT/REDUX64.EFI; then\r\n\
         chainloader ($reduxroot)/EFI/BOOT/REDUX64.EFI\r\n\
         boot\r\n\
@@ -3110,6 +3917,8 @@ fn load_optional_grub_assets_from_boot_fs() -> Option<GrubInstallAssets> {
     let efi_candidates = [
         "\\EFI\\GRUB\\GRUBX64.EFI",
         "\\EFI\\GRUB\\grubx64.efi",
+        "\\EFI\\ZENOX\\GRUBX64.EFI",
+        "\\EFI\\ZENOX\\grubx64.efi",
         "\\EFI\\GOOS\\GRUBX64.EFI",
         "\\EFI\\GOOS\\grubx64.efi",
         "\\EFI\\REDUXOS\\GRUBX64.EFI",
@@ -3363,6 +4172,7 @@ fn install_to_partition<F>(
     disk_handle: Handle,
     partition_start_lba: u64,
     partition_total_sectors: u64,
+    paired_data_start_lba: Option<u64>,
     payload: &[u8],
     grub_assets: Option<&GrubInstallAssets>,
     runtime_files: &[RuntimeInstallFile],
@@ -3413,20 +4223,35 @@ where
     let grub_config_payload = grub_assets.map(|grub| grub.config_payload.as_slice());
 
     let startup_content = b"\\EFI\\BOOT\\BOOTX64.EFI\r\n";
-    let config_content =
-        b"[goos]\r\ninstalled=1\r\nautoboot=gui\r\nboot_efi=\\EFI\\BOOT\\BOOTX64.EFI\r\n";
-    let readme_content = if grub_enabled {
-        b"Go OS installed on internal storage.\r\nBoot manager: GRUB.\r\nBoot path: \\EFI\\BOOT\\BOOTX64.EFI\r\n"
-            .as_slice()
-    } else {
-        b"Go OS installed on internal storage.\r\nBoot path: \\EFI\\BOOT\\BOOTX64.EFI\r\n"
-            .as_slice()
-    };
+    let mut config_text = format!(
+        "[zenox]\r\ninstalled=1\r\nautoboot=gui\r\nboot_start_lba={}\r\nboot_size_sectors={}\r\n",
+        partition_start_lba,
+        partition_total_sectors
+    );
+    if let Some(data_start_lba) = paired_data_start_lba {
+        config_text.push_str(format!("data_start_lba={}\r\n", data_start_lba).as_str());
+    }
+    config_text.push_str("boot_efi=\\EFI\\BOOT\\BOOTX64.EFI\r\n");
+    let config_content = config_text.into_bytes();
+    let mut readme_text = String::from(
+        "Zenox OS installed on internal storage.\r\nBoot path: \\EFI\\BOOT\\BOOTX64.EFI\r\n",
+    );
+    if grub_enabled {
+        readme_text.push_str("Boot manager: GRUB.\r\n");
+    }
+    readme_text.push_str(format!("Boot LBA: {}\r\n", partition_start_lba).as_str());
+    if let Some(data_start_lba) = paired_data_start_lba {
+        readme_text.push_str(format!("Data LBA: {}\r\n", data_start_lba).as_str());
+    }
+    let readme_content = readme_text.into_bytes();
 
     let mut runtime_lib_count = 0usize;
     let mut runtime_lib64_count = 0usize;
     let mut runtime_usr_lib_count = 0usize;
     let mut runtime_usr_lib64_count = 0usize;
+    let mut runtime_bin_count = 0usize;
+    let mut runtime_etc_count = 0usize;
+    let mut runtime_usr_bin_count = 0usize;
     for runtime in runtime_files.iter() {
         if runtime.content.is_empty() {
             return Err("RUNTIME FILE IS EMPTY.");
@@ -3439,6 +4264,9 @@ where
             RuntimeBucket::Lib64 => runtime_lib64_count += 1,
             RuntimeBucket::UsrLib => runtime_usr_lib_count += 1,
             RuntimeBucket::UsrLib64 => runtime_usr_lib64_count += 1,
+            RuntimeBucket::Bin => runtime_bin_count += 1,
+            RuntimeBucket::Etc => runtime_etc_count += 1,
+            RuntimeBucket::UsrBin => runtime_usr_bin_count += 1,
         }
     }
     progress(10, "ANALYZING RUNTIME FILES");
@@ -3461,16 +4289,15 @@ where
         cluster_count_for_bytes(runtime_manifest_content.len(), cluster_size)
     };
 
-    let root_dir_entries = 9usize
+    let root_dir_entries = 4usize
         + if runtime_enabled { 1 } else { 0 }
         + if servort_enabled { 1 } else { 0 }
         + if grub_enabled { 1 } else { 0 };
     let efi_dir_entries = 1usize + if grub_enabled { 1 } else { 0 };
     let efi_grub_dir_entries = if grub_enabled { 1usize } else { 0usize };
     let boot_dir_entries = 1usize + if grub_enabled { 2 } else { 0 };
-    let quick_access_dir_entries = 0usize;
-    let linuxrt_root_dir_entries = if runtime_enabled { 4usize } else { 0usize };
-    let linuxrt_usr_dir_entries = if runtime_enabled { 2usize } else { 0usize };
+    let linuxrt_root_dir_entries = if runtime_enabled { 6usize } else { 0usize };
+    let linuxrt_usr_dir_entries = if runtime_enabled { 3usize } else { 0usize };
     let servort_root_dir_entries = if servort_enabled {
         servort_files.len()
     } else {
@@ -3485,8 +4312,6 @@ where
         0
     };
     let boot_dir_clusters = dir_cluster_count_for_entries(boot_dir_entries, cluster_size)?;
-    let quick_access_dir_clusters =
-        dir_cluster_count_for_entries(quick_access_dir_entries, cluster_size)?;
     let linuxrt_root_dir_clusters = if runtime_enabled {
         dir_cluster_count_for_entries(linuxrt_root_dir_entries, cluster_size)?
     } else {
@@ -3499,6 +4324,16 @@ where
     };
     let linuxrt_lib64_dir_clusters = if runtime_enabled {
         dir_cluster_count_for_entries(runtime_lib64_count, cluster_size)?
+    } else {
+        0
+    };
+    let linuxrt_bin_dir_clusters = if runtime_enabled {
+        dir_cluster_count_for_entries(runtime_bin_count, cluster_size)?
+    } else {
+        0
+    };
+    let linuxrt_etc_dir_clusters = if runtime_enabled {
+        dir_cluster_count_for_entries(runtime_etc_count, cluster_size)?
     } else {
         0
     };
@@ -3517,6 +4352,11 @@ where
     } else {
         0
     };
+    let linuxrt_usr_bin_dir_clusters = if runtime_enabled {
+        dir_cluster_count_for_entries(runtime_usr_bin_count, cluster_size)?
+    } else {
+        0
+    };
     let servort_root_dir_clusters = if servort_enabled {
         dir_cluster_count_for_entries(servort_root_dir_entries, cluster_size)?
     } else {
@@ -3532,18 +4372,16 @@ where
         None
     };
     let boot_dir = allocate_cluster_chain(&mut next_cluster, boot_dir_clusters)?;
-    let desktop_dir = allocate_cluster_chain(&mut next_cluster, quick_access_dir_clusters)?;
-    let downloads_dir = allocate_cluster_chain(&mut next_cluster, quick_access_dir_clusters)?;
-    let documents_dir = allocate_cluster_chain(&mut next_cluster, quick_access_dir_clusters)?;
-    let images_dir = allocate_cluster_chain(&mut next_cluster, quick_access_dir_clusters)?;
-    let videos_dir = allocate_cluster_chain(&mut next_cluster, quick_access_dir_clusters)?;
 
     let mut linuxrt_root_dir: Option<ClusterChainLayout> = None;
     let mut linuxrt_lib_dir: Option<ClusterChainLayout> = None;
     let mut linuxrt_lib64_dir: Option<ClusterChainLayout> = None;
+    let mut linuxrt_bin_dir: Option<ClusterChainLayout> = None;
+    let mut linuxrt_etc_dir: Option<ClusterChainLayout> = None;
     let mut linuxrt_usr_dir: Option<ClusterChainLayout> = None;
     let mut linuxrt_usr_lib_dir: Option<ClusterChainLayout> = None;
     let mut linuxrt_usr_lib64_dir: Option<ClusterChainLayout> = None;
+    let mut linuxrt_usr_bin_dir: Option<ClusterChainLayout> = None;
     let mut servort_root_dir: Option<ClusterChainLayout> = None;
     if runtime_enabled {
         linuxrt_root_dir = Some(allocate_cluster_chain(
@@ -3558,6 +4396,14 @@ where
             &mut next_cluster,
             linuxrt_lib64_dir_clusters,
         )?);
+        linuxrt_bin_dir = Some(allocate_cluster_chain(
+            &mut next_cluster,
+            linuxrt_bin_dir_clusters,
+        )?);
+        linuxrt_etc_dir = Some(allocate_cluster_chain(
+            &mut next_cluster,
+            linuxrt_etc_dir_clusters,
+        )?);
         linuxrt_usr_dir = Some(allocate_cluster_chain(
             &mut next_cluster,
             linuxrt_usr_dir_clusters,
@@ -3569,6 +4415,10 @@ where
         linuxrt_usr_lib64_dir = Some(allocate_cluster_chain(
             &mut next_cluster,
             linuxrt_usr_lib64_dir_clusters,
+        )?);
+        linuxrt_usr_bin_dir = Some(allocate_cluster_chain(
+            &mut next_cluster,
+            linuxrt_usr_bin_dir_clusters,
         )?);
     }
     if servort_enabled {
@@ -3727,41 +4577,6 @@ where
             dir.cluster_count,
         )?;
     }
-    write_chain_entries(
-        disk_handle,
-        fat_start,
-        sectors_per_fat,
-        desktop_dir.first_cluster,
-        desktop_dir.cluster_count,
-    )?;
-    write_chain_entries(
-        disk_handle,
-        fat_start,
-        sectors_per_fat,
-        downloads_dir.first_cluster,
-        downloads_dir.cluster_count,
-    )?;
-    write_chain_entries(
-        disk_handle,
-        fat_start,
-        sectors_per_fat,
-        documents_dir.first_cluster,
-        documents_dir.cluster_count,
-    )?;
-    write_chain_entries(
-        disk_handle,
-        fat_start,
-        sectors_per_fat,
-        images_dir.first_cluster,
-        images_dir.cluster_count,
-    )?;
-    write_chain_entries(
-        disk_handle,
-        fat_start,
-        sectors_per_fat,
-        videos_dir.first_cluster,
-        videos_dir.cluster_count,
-    )?;
     progress(48, "FAT CHAINS: SYSTEM DIRECTORIES READY");
 
     if let Some(dir) = linuxrt_root_dir {
@@ -3791,6 +4606,24 @@ where
             dir.cluster_count,
         )?;
     }
+    if let Some(dir) = linuxrt_bin_dir {
+        write_chain_entries(
+            disk_handle,
+            fat_start,
+            sectors_per_fat,
+            dir.first_cluster,
+            dir.cluster_count,
+        )?;
+    }
+    if let Some(dir) = linuxrt_etc_dir {
+        write_chain_entries(
+            disk_handle,
+            fat_start,
+            sectors_per_fat,
+            dir.first_cluster,
+            dir.cluster_count,
+        )?;
+    }
     if let Some(dir) = linuxrt_usr_dir {
         write_chain_entries(
             disk_handle,
@@ -3810,6 +4643,15 @@ where
         )?;
     }
     if let Some(dir) = linuxrt_usr_lib64_dir {
+        write_chain_entries(
+            disk_handle,
+            fat_start,
+            sectors_per_fat,
+            dir.first_cluster,
+            dir.cluster_count,
+        )?;
+    }
+    if let Some(dir) = linuxrt_usr_bin_dir {
         write_chain_entries(
             disk_handle,
             fat_start,
@@ -3956,7 +4798,7 @@ where
         size: startup_content.len() as u32,
     });
     root_entries.push(DirEntryLayout {
-        short_name: *b"GOOS    INI",
+        short_name: *b"ZENOXOS INI",
         attr: 0x20,
         first_cluster: config_file.first_cluster,
         size: config_content.len() as u32,
@@ -3966,36 +4808,6 @@ where
         attr: 0x20,
         first_cluster: readme_file.first_cluster,
         size: readme_content.len() as u32,
-    });
-    root_entries.push(DirEntryLayout {
-        short_name: *b"DESKTOP    ",
-        attr: 0x10,
-        first_cluster: desktop_dir.first_cluster,
-        size: 0,
-    });
-    root_entries.push(DirEntryLayout {
-        short_name: *b"DOWNLOAD   ",
-        attr: 0x10,
-        first_cluster: downloads_dir.first_cluster,
-        size: 0,
-    });
-    root_entries.push(DirEntryLayout {
-        short_name: *b"DOCUMENT   ",
-        attr: 0x10,
-        first_cluster: documents_dir.first_cluster,
-        size: 0,
-    });
-    root_entries.push(DirEntryLayout {
-        short_name: *b"IMAGES     ",
-        attr: 0x10,
-        first_cluster: images_dir.first_cluster,
-        size: 0,
-    });
-    root_entries.push(DirEntryLayout {
-        short_name: *b"VIDEOS     ",
-        attr: 0x10,
-        first_cluster: videos_dir.first_cluster,
-        size: 0,
     });
     if let Some(dir) = linuxrt_root_dir {
         root_entries.push(DirEntryLayout {
@@ -4078,7 +4890,6 @@ where
             size: servort.size,
         });
     }
-    let empty_entries: [DirEntryLayout; 0] = [];
 
     write_directory_chain(
         disk_handle,
@@ -4110,41 +4921,6 @@ where
         boot_dir,
         boot_entries.as_slice(),
     )?;
-    write_directory_chain(
-        disk_handle,
-        data_start,
-        sectors_per_cluster,
-        desktop_dir,
-        empty_entries.as_slice(),
-    )?;
-    write_directory_chain(
-        disk_handle,
-        data_start,
-        sectors_per_cluster,
-        downloads_dir,
-        empty_entries.as_slice(),
-    )?;
-    write_directory_chain(
-        disk_handle,
-        data_start,
-        sectors_per_cluster,
-        documents_dir,
-        empty_entries.as_slice(),
-    )?;
-    write_directory_chain(
-        disk_handle,
-        data_start,
-        sectors_per_cluster,
-        images_dir,
-        empty_entries.as_slice(),
-    )?;
-    write_directory_chain(
-        disk_handle,
-        data_start,
-        sectors_per_cluster,
-        videos_dir,
-        empty_entries.as_slice(),
-    )?;
     if let Some(dir) = servort_root_dir {
         write_directory_chain(
             disk_handle,
@@ -4160,16 +4936,22 @@ where
         Some(rt_root_dir),
         Some(rt_lib_dir),
         Some(rt_lib64_dir),
+        Some(rt_bin_dir),
+        Some(rt_etc_dir),
         Some(rt_usr_dir),
         Some(rt_usr_lib_dir),
         Some(rt_usr_lib64_dir),
+        Some(rt_usr_bin_dir),
     ) = (
         linuxrt_root_dir,
         linuxrt_lib_dir,
         linuxrt_lib64_dir,
+        linuxrt_bin_dir,
+        linuxrt_etc_dir,
         linuxrt_usr_dir,
         linuxrt_usr_lib_dir,
         linuxrt_usr_lib64_dir,
+        linuxrt_usr_bin_dir,
     ) {
         let mut rt_root_entries = Vec::new();
         rt_root_entries.push(DirEntryLayout {
@@ -4182,6 +4964,18 @@ where
             short_name: *b"LIB64      ",
             attr: 0x10,
             first_cluster: rt_lib64_dir.first_cluster,
+            size: 0,
+        });
+        rt_root_entries.push(DirEntryLayout {
+            short_name: *b"BIN        ",
+            attr: 0x10,
+            first_cluster: rt_bin_dir.first_cluster,
+            size: 0,
+        });
+        rt_root_entries.push(DirEntryLayout {
+            short_name: *b"ETC        ",
+            attr: 0x10,
+            first_cluster: rt_etc_dir.first_cluster,
             size: 0,
         });
         rt_root_entries.push(DirEntryLayout {
@@ -4212,12 +5006,21 @@ where
                 first_cluster: rt_usr_lib64_dir.first_cluster,
                 size: 0,
             },
+            DirEntryLayout {
+                short_name: *b"BIN        ",
+                attr: 0x10,
+                first_cluster: rt_usr_bin_dir.first_cluster,
+                size: 0,
+            },
         ];
 
         let mut rt_lib_entries = Vec::new();
         let mut rt_lib64_entries = Vec::new();
+        let mut rt_bin_entries = Vec::new();
+        let mut rt_etc_entries = Vec::new();
         let mut rt_usr_lib_entries = Vec::new();
         let mut rt_usr_lib64_entries = Vec::new();
+        let mut rt_usr_bin_entries = Vec::new();
         for runtime in runtime_layouts.iter() {
             let entry = DirEntryLayout {
                 short_name: runtime.short_name,
@@ -4230,6 +5033,9 @@ where
                 RuntimeBucket::Lib64 => rt_lib64_entries.push(entry),
                 RuntimeBucket::UsrLib => rt_usr_lib_entries.push(entry),
                 RuntimeBucket::UsrLib64 => rt_usr_lib64_entries.push(entry),
+                RuntimeBucket::Bin => rt_bin_entries.push(entry),
+                RuntimeBucket::Etc => rt_etc_entries.push(entry),
+                RuntimeBucket::UsrBin => rt_usr_bin_entries.push(entry),
             }
         }
 
@@ -4265,6 +5071,20 @@ where
             disk_handle,
             data_start,
             sectors_per_cluster,
+            rt_bin_dir,
+            rt_bin_entries.as_slice(),
+        )?;
+        write_directory_chain(
+            disk_handle,
+            data_start,
+            sectors_per_cluster,
+            rt_etc_dir,
+            rt_etc_entries.as_slice(),
+        )?;
+        write_directory_chain(
+            disk_handle,
+            data_start,
+            sectors_per_cluster,
             rt_usr_lib_dir,
             rt_usr_lib_entries.as_slice(),
         )?;
@@ -4274,6 +5094,13 @@ where
             sectors_per_cluster,
             rt_usr_lib64_dir,
             rt_usr_lib64_entries.as_slice(),
+        )?;
+        write_directory_chain(
+            disk_handle,
+            data_start,
+            sectors_per_cluster,
+            rt_usr_bin_dir,
+            rt_usr_bin_entries.as_slice(),
         )?;
     }
     progress(84, "LINUXRT DIRECTORIES WRITTEN");
@@ -4302,7 +5129,7 @@ where
         sectors_per_cluster,
         config_file.first_cluster,
         config_file.cluster_count,
-        config_content,
+        config_content.as_slice(),
     )?;
     write_cluster_chain_data(
         disk_handle,
@@ -4310,7 +5137,7 @@ where
         sectors_per_cluster,
         readme_file.first_cluster,
         readme_file.cluster_count,
-        readme_content,
+        readme_content.as_slice(),
     )?;
     progress(91, "CORE FILES WRITTEN");
     if let Some(file) = redux_efi_file {
@@ -4486,6 +5313,483 @@ fn compute_layout(total_sectors: u64, sectors_per_cluster: u8) -> Result<(u32, u
     }
 
     Err("FAILED TO CONVERGE FAT LAYOUT.")
+}
+
+fn exfat_choose_sectors_per_cluster_shift(total_sectors: u64) -> u8 {
+    let total_mib = total_sectors / 2048;
+    if total_mib >= 32 * 1024 {
+        7 // 64 KiB
+    } else if total_mib >= 1024 {
+        6 // 32 KiB
+    } else if total_mib >= 256 {
+        5 // 16 KiB
+    } else {
+        3 // 4 KiB
+    }
+}
+
+fn exfat_compute_layout(
+    total_sectors: u64,
+    sectors_per_cluster: u32,
+) -> Result<(u32, u32, u32, u32), &'static str> {
+    if total_sectors < 65_536 || sectors_per_cluster == 0 {
+        return Err("EXFAT TARGET TOO SMALL.");
+    }
+
+    let fat_offset = 24u32;
+    let mut fat_length = 1u32;
+    for _ in 0..24 {
+        let heap_unaligned = fat_offset
+            .checked_add(fat_length)
+            .ok_or("EXFAT LAYOUT OVERFLOW.")?;
+        let cluster_heap_offset = align_up_u32(heap_unaligned, sectors_per_cluster);
+        if total_sectors <= cluster_heap_offset as u64 {
+            return Err("EXFAT TARGET LAYOUT OVERFLOW.");
+        }
+        let cluster_count = ((total_sectors - cluster_heap_offset as u64)
+            / sectors_per_cluster as u64) as u32;
+        if cluster_count < 16 {
+            return Err("EXFAT CLUSTER COUNT TOO SMALL.");
+        }
+        let needed_fat = (((cluster_count as u64 + 2) * 4 + LOGICAL_SECTOR_SIZE as u64 - 1)
+            / LOGICAL_SECTOR_SIZE as u64) as u32;
+        if needed_fat == fat_length {
+            return Ok((fat_offset, fat_length, cluster_heap_offset, cluster_count));
+        }
+        fat_length = needed_fat.max(1);
+    }
+
+    Err("EXFAT LAYOUT DID NOT CONVERGE.")
+}
+
+fn exfat_boot_checksum(sectors: &[[u8; LOGICAL_SECTOR_SIZE]; 11]) -> u32 {
+    let mut checksum = 0u32;
+    let mut absolute = 0usize;
+    for sector in sectors.iter() {
+        for byte in sector.iter() {
+            if absolute != 106 && absolute != 107 && absolute != 112 {
+                checksum = checksum.rotate_right(1).wrapping_add(*byte as u32);
+            }
+            absolute += 1;
+        }
+    }
+    checksum
+}
+
+fn exfat_write_boot_region(
+    handle: Handle,
+    base_lba: u64,
+    partition_offset: u64,
+    volume_length: u64,
+    fat_offset: u32,
+    fat_length: u32,
+    cluster_heap_offset: u32,
+    cluster_count: u32,
+    root_cluster: u32,
+    sectors_per_cluster_shift: u8,
+    percent_in_use: u8,
+) -> Result<(), &'static str> {
+    let mut sectors = [[0u8; LOGICAL_SECTOR_SIZE]; 11];
+    let boot = &mut sectors[0];
+    boot[0] = 0xEB;
+    boot[1] = 0x76;
+    boot[2] = 0x90;
+    boot[3..11].copy_from_slice(b"EXFAT   ");
+    boot[0x40..0x48].copy_from_slice(&partition_offset.to_le_bytes());
+    boot[0x48..0x50].copy_from_slice(&volume_length.to_le_bytes());
+    boot[0x50..0x54].copy_from_slice(&fat_offset.to_le_bytes());
+    boot[0x54..0x58].copy_from_slice(&fat_length.to_le_bytes());
+    boot[0x58..0x5C].copy_from_slice(&cluster_heap_offset.to_le_bytes());
+    boot[0x5C..0x60].copy_from_slice(&cluster_count.to_le_bytes());
+    boot[0x60..0x64].copy_from_slice(&root_cluster.to_le_bytes());
+    boot[0x64..0x68].copy_from_slice(&0x2026_0605u32.to_le_bytes());
+    boot[0x68..0x6A].copy_from_slice(&0x0100u16.to_le_bytes());
+    boot[0x6A..0x6C].copy_from_slice(&0u16.to_le_bytes());
+    boot[0x6C] = 9;
+    boot[0x6D] = sectors_per_cluster_shift;
+    boot[0x6E] = 1;
+    boot[0x6F] = 0x80;
+    boot[0x70] = percent_in_use;
+
+    let mut i = 0usize;
+    while i < 11 {
+        sectors[i][510] = 0x55;
+        sectors[i][511] = 0xAA;
+        i += 1;
+    }
+
+    let checksum = exfat_boot_checksum(&sectors);
+    for (idx, sector) in sectors.iter().enumerate() {
+        if !write_sector_to_uefi_handle(handle, base_lba + idx as u64, sector) {
+            return Err("EXFAT BOOT REGION WRITE FAILED.");
+        }
+    }
+
+    let mut checksum_sector = [0u8; LOGICAL_SECTOR_SIZE];
+    let mut off = 0usize;
+    while off + 4 <= LOGICAL_SECTOR_SIZE {
+        checksum_sector[off..off + 4].copy_from_slice(&checksum.to_le_bytes());
+        off += 4;
+    }
+    if !write_sector_to_uefi_handle(handle, base_lba + 11, &checksum_sector) {
+        return Err("EXFAT BOOT CHECKSUM WRITE FAILED.");
+    }
+    Ok(())
+}
+
+fn exfat_upcase_checksum(data: &[u8]) -> u32 {
+    let mut checksum = 0u32;
+    for byte in data.iter() {
+        checksum = checksum.rotate_right(1).wrapping_add(*byte as u32);
+    }
+    checksum
+}
+
+fn build_exfat_upcase_table() -> Vec<u8> {
+    let mut out = Vec::new();
+    out.resize(65_536 * 2, 0);
+    let mut code = 0u32;
+    while code <= 0xFFFF {
+        let mapped = if code >= b'a' as u32 && code <= b'z' as u32 {
+            code - 32
+        } else {
+            code
+        } as u16;
+        let off = code as usize * 2;
+        out[off..off + 2].copy_from_slice(&mapped.to_le_bytes());
+        code += 1;
+    }
+    out
+}
+
+fn exfat_name_hash(name: &str) -> u16 {
+    let mut hash = 0u16;
+    for b in name.bytes() {
+        let ch = if b.is_ascii_lowercase() { b.to_ascii_uppercase() } else { b };
+        for byte in [ch, 0u8] {
+            hash = hash.rotate_right(1).wrapping_add(byte as u16);
+        }
+    }
+    hash
+}
+
+fn exfat_entry_set_checksum(entries: &[u8]) -> u16 {
+    let mut checksum = 0u16;
+    let mut i = 0usize;
+    while i < entries.len() {
+        if i != 2 && i != 3 {
+            checksum = checksum.rotate_right(1).wrapping_add(entries[i] as u16);
+        }
+        i += 1;
+    }
+    checksum
+}
+
+fn exfat_write_utf16_ascii(dst: &mut [u8], text: &str, max_chars: usize) -> usize {
+    let mut count = 0usize;
+    for b in text.bytes() {
+        if count >= max_chars {
+            break;
+        }
+        let off = count * 2;
+        if off + 2 > dst.len() {
+            break;
+        }
+        dst[off] = b;
+        dst[off + 1] = 0;
+        count += 1;
+    }
+    count
+}
+
+fn exfat_push_directory_entry_set(
+    image: &mut [u8],
+    entry_index: &mut usize,
+    name: &str,
+    first_cluster: u32,
+    data_length: u64,
+) -> Result<(), &'static str> {
+    if *entry_index + 3 > image.len() / 32 {
+        return Err("EXFAT ROOT DIRECTORY FULL.");
+    }
+
+    let base = *entry_index * 32;
+    let set = &mut image[base..base + 96];
+    set.fill(0);
+
+    set[0] = 0x85;
+    set[1] = 2;
+    set[4..6].copy_from_slice(&0x10u16.to_le_bytes());
+
+    set[32] = 0xC0;
+    set[33] = 0x03; // allocation possible + no FAT chain
+    let name_len = name.bytes().count().min(15);
+    set[35] = name_len as u8;
+    set[36..38].copy_from_slice(&exfat_name_hash(name).to_le_bytes());
+    set[40..48].copy_from_slice(&data_length.to_le_bytes());
+    set[52..56].copy_from_slice(&first_cluster.to_le_bytes());
+    set[56..64].copy_from_slice(&data_length.to_le_bytes());
+
+    set[64] = 0xC1;
+    exfat_write_utf16_ascii(&mut set[66..96], name, 15);
+
+    let checksum = exfat_entry_set_checksum(set);
+    set[2..4].copy_from_slice(&checksum.to_le_bytes());
+
+    *entry_index += 3;
+    Ok(())
+}
+
+fn exfat_write_fat_entry(
+    handle: Handle,
+    fat_start: u64,
+    cluster: u32,
+    value: u32,
+) -> Result<(), &'static str> {
+    let fat_offset = cluster as u64 * 4;
+    let lba = fat_start + fat_offset / LOGICAL_SECTOR_SIZE as u64;
+    let off = (fat_offset % LOGICAL_SECTOR_SIZE as u64) as usize;
+    if off + 4 > LOGICAL_SECTOR_SIZE {
+        return Err("EXFAT FAT OFFSET INVALID.");
+    }
+
+    let mut sector = [0u8; LOGICAL_SECTOR_SIZE];
+    if !read_sector_from_uefi_handle(handle, lba, &mut sector) {
+        return Err("EXFAT FAT READ FAILED.");
+    }
+    sector[off..off + 4].copy_from_slice(&value.to_le_bytes());
+    if !write_sector_to_uefi_handle(handle, lba, &sector) {
+        return Err("EXFAT FAT WRITE FAILED.");
+    }
+    Ok(())
+}
+
+fn format_exfat_partition(
+    handle: Handle,
+    partition_start_lba: u64,
+    partition_total_sectors: u64,
+    label: &str,
+) -> Result<(), &'static str> {
+    if partition_total_sectors < DUAL_MIN_DATA_SECTORS as u64 {
+        return Err("EXFAT DATA PARTITION TOO SMALL.");
+    }
+
+    let spc_shift = exfat_choose_sectors_per_cluster_shift(partition_total_sectors);
+    let sectors_per_cluster = 1u32 << spc_shift;
+    let cluster_size = sectors_per_cluster as usize * LOGICAL_SECTOR_SIZE;
+    let (fat_offset, fat_length, cluster_heap_offset, cluster_count) =
+        exfat_compute_layout(partition_total_sectors, sectors_per_cluster)?;
+
+    let root_cluster = 2u32;
+    let bitmap_cluster = 3u32;
+    let bitmap_bytes = ((cluster_count as usize) + 7) / 8;
+    let bitmap_clusters = cluster_count_for_bytes(bitmap_bytes, cluster_size);
+    let upcase_cluster = bitmap_cluster + bitmap_clusters;
+    let upcase = build_exfat_upcase_table();
+    let upcase_checksum = exfat_upcase_checksum(upcase.as_slice());
+    let upcase_clusters = cluster_count_for_bytes(upcase.len(), cluster_size);
+    let desktop_cluster = upcase_cluster + upcase_clusters;
+    let downloads_cluster = desktop_cluster + 1;
+    let documents_cluster = downloads_cluster + 1;
+    let images_cluster = documents_cluster + 1;
+    let videos_cluster = images_cluster + 1;
+    let last_allocated_cluster = videos_cluster;
+    if last_allocated_cluster > cluster_count.saturating_add(1) {
+        return Err("EXFAT DATA PARTITION HAS TOO FEW CLUSTERS.");
+    }
+
+    let used_clusters = last_allocated_cluster.saturating_sub(1);
+    let percent_in_use = if cluster_count == 0 {
+        0
+    } else {
+        ((used_clusters as u64 * 100) / cluster_count as u64).min(100) as u8
+    };
+
+    let zero = [0u8; LOGICAL_SECTOR_SIZE];
+    let clear_sectors = 24u64
+        .saturating_add(fat_length as u64)
+        .saturating_add((used_clusters as u64 + 2) * sectors_per_cluster as u64);
+    let mut i = 0u64;
+    while i < clear_sectors.min(partition_total_sectors) {
+        if !write_sector_to_uefi_handle(handle, partition_start_lba + i, &zero) {
+            return Err("EXFAT CLEAR FAILED.");
+        }
+        i += 1;
+    }
+
+    exfat_write_boot_region(
+        handle,
+        partition_start_lba,
+        partition_start_lba,
+        partition_total_sectors,
+        fat_offset,
+        fat_length,
+        cluster_heap_offset,
+        cluster_count,
+        root_cluster,
+        spc_shift,
+        percent_in_use,
+    )?;
+    exfat_write_boot_region(
+        handle,
+        partition_start_lba + 12,
+        partition_start_lba,
+        partition_total_sectors,
+        fat_offset,
+        fat_length,
+        cluster_heap_offset,
+        cluster_count,
+        root_cluster,
+        spc_shift,
+        percent_in_use,
+    )?;
+
+    let fat_start = partition_start_lba + fat_offset as u64;
+    let data_start = partition_start_lba + cluster_heap_offset as u64;
+    exfat_write_fat_entry(handle, fat_start, 0, 0xFFFF_FFF8)?;
+    exfat_write_fat_entry(handle, fat_start, 1, 0xFFFF_FFFF)?;
+    let mut cluster = root_cluster;
+    while cluster <= last_allocated_cluster {
+        exfat_write_fat_entry(handle, fat_start, cluster, 0xFFFF_FFFF)?;
+        cluster += 1;
+    }
+
+    let mut bitmap = Vec::new();
+    bitmap.resize(bitmap_bytes, 0);
+    let mut used = 0u32;
+    while used < used_clusters {
+        let byte_idx = (used / 8) as usize;
+        let bit = (used % 8) as u8;
+        if byte_idx < bitmap.len() {
+            bitmap[byte_idx] |= 1u8 << bit;
+        }
+        used += 1;
+    }
+    write_cluster_chain_data(
+        handle,
+        data_start,
+        sectors_per_cluster as u8,
+        bitmap_cluster,
+        bitmap_clusters,
+        bitmap.as_slice(),
+    )?;
+    write_cluster_chain_data(
+        handle,
+        data_start,
+        sectors_per_cluster as u8,
+        upcase_cluster,
+        upcase_clusters,
+        upcase.as_slice(),
+    )?;
+
+    let mut root = Vec::new();
+    root.resize(cluster_size, 0);
+    let mut entry_idx = 0usize;
+    root[entry_idx * 32] = 0x81;
+    root[entry_idx * 32 + 20..entry_idx * 32 + 24].copy_from_slice(&bitmap_cluster.to_le_bytes());
+    root[entry_idx * 32 + 24..entry_idx * 32 + 32].copy_from_slice(&(bitmap_bytes as u64).to_le_bytes());
+    entry_idx += 1;
+
+    root[entry_idx * 32] = 0x82;
+    root[entry_idx * 32 + 4..entry_idx * 32 + 8].copy_from_slice(&upcase_checksum.to_le_bytes());
+    root[entry_idx * 32 + 20..entry_idx * 32 + 24].copy_from_slice(&upcase_cluster.to_le_bytes());
+    root[entry_idx * 32 + 24..entry_idx * 32 + 32].copy_from_slice(&(upcase.len() as u64).to_le_bytes());
+    entry_idx += 1;
+
+    let label_len = label.bytes().count().min(11);
+    root[entry_idx * 32] = 0x83;
+    root[entry_idx * 32 + 1] = label_len as u8;
+    exfat_write_utf16_ascii(&mut root[entry_idx * 32 + 2..entry_idx * 32 + 32], label, label_len);
+    entry_idx += 1;
+
+    exfat_push_directory_entry_set(
+        root.as_mut_slice(),
+        &mut entry_idx,
+        "Desktop",
+        desktop_cluster,
+        cluster_size as u64,
+    )?;
+    exfat_push_directory_entry_set(
+        root.as_mut_slice(),
+        &mut entry_idx,
+        "Downloads",
+        downloads_cluster,
+        cluster_size as u64,
+    )?;
+    exfat_push_directory_entry_set(
+        root.as_mut_slice(),
+        &mut entry_idx,
+        "Documents",
+        documents_cluster,
+        cluster_size as u64,
+    )?;
+    exfat_push_directory_entry_set(
+        root.as_mut_slice(),
+        &mut entry_idx,
+        "Images",
+        images_cluster,
+        cluster_size as u64,
+    )?;
+    exfat_push_directory_entry_set(
+        root.as_mut_slice(),
+        &mut entry_idx,
+        "Videos",
+        videos_cluster,
+        cluster_size as u64,
+    )?;
+
+    write_cluster_chain_data(
+        handle,
+        data_start,
+        sectors_per_cluster as u8,
+        root_cluster,
+        1,
+        root.as_slice(),
+    )?;
+
+    let empty_dir = Vec::new();
+    write_cluster_chain_data(
+        handle,
+        data_start,
+        sectors_per_cluster as u8,
+        desktop_cluster,
+        1,
+        empty_dir.as_slice(),
+    )?;
+    write_cluster_chain_data(
+        handle,
+        data_start,
+        sectors_per_cluster as u8,
+        downloads_cluster,
+        1,
+        empty_dir.as_slice(),
+    )?;
+    write_cluster_chain_data(
+        handle,
+        data_start,
+        sectors_per_cluster as u8,
+        documents_cluster,
+        1,
+        empty_dir.as_slice(),
+    )?;
+    write_cluster_chain_data(
+        handle,
+        data_start,
+        sectors_per_cluster as u8,
+        images_cluster,
+        1,
+        empty_dir.as_slice(),
+    )?;
+    write_cluster_chain_data(
+        handle,
+        data_start,
+        sectors_per_cluster as u8,
+        videos_cluster,
+        1,
+        empty_dir.as_slice(),
+    )?;
+
+    Ok(())
 }
 
 fn cluster_count_for_bytes(len: usize, cluster_size: usize) -> u32 {
@@ -4891,7 +6195,7 @@ fn write_boot_sector_backup(
     sector[0] = 0xEB;
     sector[1] = 0x58;
     sector[2] = 0x90;
-    sector[3..11].copy_from_slice(b"GOOS    ");
+    sector[3..11].copy_from_slice(b"ZENOXOS ");
     sector[11..13].copy_from_slice(&(LOGICAL_SECTOR_SIZE as u16).to_le_bytes());
     sector[13] = sectors_per_cluster;
     sector[14..16].copy_from_slice(&RESERVED_SECTORS.to_le_bytes());
@@ -4913,7 +6217,7 @@ fn write_boot_sector_backup(
     sector[64] = 0x80;
     sector[66] = 0x29;
     sector[67..71].copy_from_slice(&0x2026_0217u32.to_le_bytes());
-    sector[71..82].copy_from_slice(b"GOOS       ");
+    sector[71..82].copy_from_slice(b"ZENOX OS   ");
     sector[82..90].copy_from_slice(b"FAT32   ");
     sector[510] = 0x55;
     sector[511] = 0xAA;

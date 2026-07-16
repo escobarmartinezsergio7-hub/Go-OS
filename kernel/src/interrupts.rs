@@ -1090,6 +1090,22 @@ fn cpu_has_x2apic() -> bool {
 }
 
 pub fn quiesce_firmware_apic() {
+    let apic_mode = APIC_TIMER_MODE.load(Ordering::SeqCst);
+    let apic_base_saved = APIC_TIMER_BASE.load(Ordering::SeqCst);
+    let pic_timer_was_armed = PIC_TIMER_ARMED.load(Ordering::SeqCst);
+
+    unsafe {
+        if pic_timer_was_armed {
+            let imr = inb(0x21);
+            SAVED_PIC_IMR.store(imr, Ordering::SeqCst);
+            outb(0x21, imr | 0x01);
+            outb(0xA1, 0xFF);
+        } else {
+            let imr = inb(0x21);
+            outb(0x21, imr | 0x01);
+        }
+    }
+
     APIC_TIMER_MODE.store(APIC_MODE_NONE, Ordering::SeqCst);
     APIC_TIMER_BASE.store(0, Ordering::SeqCst);
     PIC_TIMER_ARMED.store(false, Ordering::SeqCst);
@@ -1102,6 +1118,22 @@ pub fn quiesce_firmware_apic() {
     unsafe {
         let apic_base = crate::hal::rdmsr(IA32_APIC_BASE_MSR);
         if (apic_base & APIC_BASE_ENABLE) == 0 {
+            return;
+        }
+        if apic_mode == APIC_MODE_X2APIC {
+            crate::hal::wrmsr(IA32_X2APIC_INITIAL_COUNT, 0);
+            crate::hal::wrmsr(
+                IA32_X2APIC_LVT_TIMER,
+                (APIC_LVT_MASKED | APIC_TIMER_VECTOR as u32) as u64,
+            );
+            crate::hal::wrmsr(IA32_X2APIC_EOI, 0);
+            return;
+        }
+        if apic_mode == APIC_MODE_XAPIC && apic_base_saved != 0 {
+            let lvt_ptr = (apic_base_saved + APIC_REG_LVT_TIMER) as *mut u32;
+            lvt_ptr.write_volatile(APIC_LVT_MASKED | APIC_TIMER_VECTOR as u32);
+            ((apic_base_saved + APIC_REG_INITIAL_COUNT) as *mut u32).write_volatile(0);
+            apic_eoi_if_present();
             return;
         }
         if (apic_base & APIC_BASE_X2APIC_ENABLE) != 0 {

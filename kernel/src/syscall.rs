@@ -626,6 +626,7 @@ struct LinuxProcessSlot {
     pid: u32,
     parent_pid: u32,
     leader_tid: u32,
+    cr3: Option<u64>,
     brk_base: u64,
     brk_current: u64,
     brk_limit: u64,
@@ -640,6 +641,7 @@ impl LinuxProcessSlot {
             pid: 0,
             parent_pid: 0,
             leader_tid: 0,
+            cr3: None,
             brk_base: 0,
             brk_current: 0,
             brk_limit: 0,
@@ -698,8 +700,11 @@ const LINUX_OPEN_KIND_STDIO_DUP: u8 = 6;
 const LINUX_OPEN_KIND_SOCKET: u8 = 7;
 const LINUX_OPEN_KIND_PIDFD: u8 = 8;
 const LINUX_OPEN_KIND_DIR: u8 = 9;
+const LINUX_OPEN_KIND_FAT32: u8 = 10;
 const LINUX_OPEN_AUX_TIMERFD: u64 = 0x5446_4D52; // "TFMR"
 
+const LINUX_O_WRONLY: u64 = 0x0000_0001;
+const LINUX_O_RDWR: u64 = 0x0000_0002;
 const LINUX_O_CREAT: u64 = 0x0000_0040;
 const LINUX_O_EXCL: u64 = 0x0000_0080;
 const LINUX_O_DIRECTORY: u64 = 0x0001_0000;
@@ -721,8 +726,63 @@ const LINUX_SOCKET_ENDPOINT_X11: u8 = 1;
 const LINUX_SOCKET_ENDPOINT_PAIR: u8 = 2;
 const LINUX_SOCKET_ENDPOINT_UNIX_PATH: u8 = 3;
 const LINUX_SOCKET_ENDPOINT_DBUS: u8 = 4;
+const LINUX_SOCKET_ENDPOINT_WAYLAND: u8 = 5;
 const LINUX_SOCKET_RIGHTS_QUEUE: usize = 8;
 const LINUX_SOCKET_RIGHTS_PER_MSG: usize = 8;
+const LINUX_WAYLAND_REQ_BUF: usize = 16 * 1024;
+const LINUX_WAYLAND_MAX_OBJECTS: usize = 96;
+const LINUX_WL_OBJ_NONE: u8 = 0;
+const LINUX_WL_OBJ_DISPLAY: u8 = 1;
+const LINUX_WL_OBJ_REGISTRY: u8 = 2;
+const LINUX_WL_OBJ_CALLBACK: u8 = 3;
+const LINUX_WL_OBJ_COMPOSITOR: u8 = 4;
+const LINUX_WL_OBJ_SURFACE: u8 = 5;
+const LINUX_WL_OBJ_SHM: u8 = 6;
+const LINUX_WL_OBJ_SHM_POOL: u8 = 7;
+const LINUX_WL_OBJ_BUFFER: u8 = 8;
+const LINUX_WL_OBJ_XDG_WM_BASE: u8 = 9;
+const LINUX_WL_OBJ_XDG_POSITIONER: u8 = 10;
+const LINUX_WL_OBJ_XDG_SURFACE: u8 = 11;
+const LINUX_WL_OBJ_XDG_TOPLEVEL: u8 = 12;
+const LINUX_WL_OBJ_SEAT: u8 = 13;
+const LINUX_WL_OBJ_OUTPUT: u8 = 14;
+const LINUX_WL_OBJ_POINTER: u8 = 15;
+const LINUX_WL_OBJ_KEYBOARD: u8 = 16;
+const LINUX_WL_OBJ_TOUCH: u8 = 17;
+const LINUX_WL_OBJ_DATA_DEVICE_MANAGER: u8 = 18;
+const LINUX_WL_OBJ_DATA_DEVICE: u8 = 19;
+const LINUX_WL_OBJ_DATA_SOURCE: u8 = 20;
+const LINUX_WL_OBJ_SUBCOMPOSITOR: u8 = 21;
+const LINUX_WL_OBJ_SUBSURFACE: u8 = 22;
+const LINUX_WL_GLOBAL_COMPOSITOR: u32 = 1;
+const LINUX_WL_GLOBAL_SHM: u32 = 2;
+const LINUX_WL_GLOBAL_XDG_WM_BASE: u32 = 3;
+const LINUX_WL_GLOBAL_SEAT: u32 = 4;
+const LINUX_WL_GLOBAL_OUTPUT: u32 = 5;
+const LINUX_WL_GLOBAL_DATA_DEVICE_MANAGER: u32 = 6;
+const LINUX_WL_GLOBAL_SUBCOMPOSITOR: u32 = 7;
+const LINUX_WL_SHM_FORMAT_ARGB8888: u32 = 0;
+const LINUX_WL_SHM_FORMAT_XRGB8888: u32 = 1;
+const LINUX_WL_OUTPUT_MODE_CURRENT: u32 = 0x1;
+const LINUX_WL_OUTPUT_MODE_PREFERRED: u32 = 0x2;
+const LINUX_WL_SEAT_CAP_POINTER: u32 = 0x1;
+const LINUX_WL_SEAT_CAP_KEYBOARD: u32 = 0x2;
+const LINUX_WL_AXIS_VERTICAL_SCROLL: u32 = 0;
+const LINUX_WL_BUTTON_LEFT: u32 = 0x110;
+const LINUX_WL_BUTTON_RIGHT: u32 = 0x111;
+const LINUX_WL_KEY_STATE_RELEASED: u32 = 0;
+const LINUX_WL_KEY_STATE_PRESSED: u32 = 1;
+const LINUX_WL_KEYMAP_FORMAT_NO_KEYMAP: u32 = 0;
+const LINUX_WL_KEYMAP_FORMAT_XKB_V1: u32 = 1;
+const LINUX_WL_KEY_REPEAT_RATE: i32 = 25;
+const LINUX_WL_KEY_REPEAT_DELAY_MS: i32 = 600;
+const LINUX_WL_KEYMAP_TEXT: &[u8] = b"xkb_keymap {\n\
+    xkb_keycodes  { include \"evdev+aliases(qwerty)\" };\n\
+    xkb_types     { include \"complete\" };\n\
+    xkb_compatibility { include \"complete\" };\n\
+    xkb_symbols   { include \"pc+us+inet(evdev)\" };\n\
+    xkb_geometry  { include \"pc(pc105)\" };\n\
+};\n\0";
 const LINUX_DBUS_STATE_AUTH_WAIT: u8 = 0;
 const LINUX_DBUS_STATE_AUTH_OK: u8 = 1;
 const LINUX_DBUS_STATE_RUNNING: u8 = 2;
@@ -919,6 +979,39 @@ impl LinuxSocketRightsMsg {
 }
 
 #[derive(Clone, Copy)]
+struct LinuxWaylandObjectSlot {
+    active: bool,
+    id: u32,
+    kind: u8,
+    _pad0: [u8; 3],
+    version: u32,
+    aux_open_slot: i32,
+    aux_id: u32,
+    aux_i0: i32,
+    aux_i1: i32,
+    aux_i2: i32,
+    aux_u0: u32,
+}
+
+impl LinuxWaylandObjectSlot {
+    const fn empty() -> Self {
+        Self {
+            active: false,
+            id: 0,
+            kind: LINUX_WL_OBJ_NONE,
+            _pad0: [0; 3],
+            version: 0,
+            aux_open_slot: -1,
+            aux_id: 0,
+            aux_i0: 0,
+            aux_i1: 0,
+            aux_i2: 0,
+            aux_u0: 0,
+        }
+    }
+}
+
+#[derive(Clone, Copy)]
 struct LinuxSocketSlot {
     active: bool,
     domain: u16,
@@ -945,10 +1038,19 @@ struct LinuxSocketSlot {
     rights_head: u8,
     rights_tail: u8,
     rights_count: u8,
-    _pad2: [u8; 5],
+    wayland_event_rights_head: u8,
+    wayland_event_rights_tail: u8,
+    wayland_event_rights_count: u8,
+    _pad2: [u8; 2],
+    wayland_req_len: usize,
+    wayland_serial: u32,
+    _pad3: [u8; 4],
     path: [u8; LINUX_PATH_MAX],
     rx_buf: [u8; LINUX_SOCKET_RX_BUF],
+    wayland_req_buf: [u8; LINUX_WAYLAND_REQ_BUF],
     rights_msgs: [LinuxSocketRightsMsg; LINUX_SOCKET_RIGHTS_QUEUE],
+    wayland_event_rights_msgs: [LinuxSocketRightsMsg; LINUX_SOCKET_RIGHTS_QUEUE],
+    wayland_objects: [LinuxWaylandObjectSlot; LINUX_WAYLAND_MAX_OBJECTS],
 }
 
 impl LinuxSocketSlot {
@@ -979,10 +1081,19 @@ impl LinuxSocketSlot {
             rights_head: 0,
             rights_tail: 0,
             rights_count: 0,
-            _pad2: [0; 5],
+            wayland_event_rights_head: 0,
+            wayland_event_rights_tail: 0,
+            wayland_event_rights_count: 0,
+            _pad2: [0; 2],
+            wayland_req_len: 0,
+            wayland_serial: 1,
+            _pad3: [0; 4],
             path: [0; LINUX_PATH_MAX],
             rx_buf: [0; LINUX_SOCKET_RX_BUF],
+            wayland_req_buf: [0; LINUX_WAYLAND_REQ_BUF],
             rights_msgs: [LinuxSocketRightsMsg::empty(); LINUX_SOCKET_RIGHTS_QUEUE],
+            wayland_event_rights_msgs: [LinuxSocketRightsMsg::empty(); LINUX_SOCKET_RIGHTS_QUEUE],
+            wayland_objects: [LinuxWaylandObjectSlot::empty(); LINUX_WAYLAND_MAX_OBJECTS],
         }
     }
 }
@@ -2914,6 +3025,7 @@ fn linux_vfs_directory_exists(state: &LinuxShimState, path: &[u8], path_len: usi
         || linux_path_equals(path, path_len, "/proc/self")
         || linux_path_equals(path, path_len, "/tmp")
         || linux_path_equals(path, path_len, "/tmp/.x11-unix")
+        || linux_path_is_virtual_wayland_dir(path, path_len)
         || linux_path_is_virtual_dbus_dir(path, path_len)
     {
         return true;
@@ -2944,7 +3056,10 @@ fn linux_vfs_lookup_path(
     path_len: usize,
 ) -> (bool, bool, Option<usize>, u32, u64) {
     if linux_path_is_virtual_x11_socket(path, path_len) {
-        return (true, false, None, LINUX_STAT_MODE_SOCK, 0);
+        return (false, false, None, 0, 0);
+    }
+    if linux_path_is_virtual_wayland_socket(path, path_len) {
+        return (false, false, None, 0, 0);
     }
     if linux_path_is_virtual_dbus_socket(path, path_len) {
         return (true, false, None, LINUX_STAT_MODE_SOCK, 0);
@@ -2979,7 +3094,10 @@ fn linux_vfs_lookup_path(
             return (true, false, None, fs_meta.mode_bits, 0);
         }
     }
-    if linux_vfs_directory_exists(state, path, path_len) || linux_path_is_virtual_x11_dir(path, path_len) {
+    if linux_vfs_directory_exists(state, path, path_len)
+        || linux_path_is_virtual_x11_dir(path, path_len)
+        || linux_path_is_virtual_wayland_dir(path, path_len)
+    {
         return (true, false, None, LINUX_STAT_MODE_DIR, 0);
     }
     (false, false, None, 0, 0)
@@ -3014,8 +3132,13 @@ fn linux_resolve_dirfd_base_path(
     out: &mut [u8; LINUX_PATH_MAX],
 ) -> Result<usize, i64> {
     if dirfd == LINUX_AT_FDCWD {
-        out[0] = b'/';
-        return Ok(1);
+        let prefix = b"/LINUXRT/";
+        let mut i = 0usize;
+        while i < prefix.len() {
+            out[i] = prefix[i];
+            i += 1;
+        }
+        return Ok(prefix.len());
     }
     let slot = linux_lookup_open_slot(state, dirfd as i32)?;
     if slot.kind != LINUX_OPEN_KIND_DIR {
@@ -3036,12 +3159,19 @@ fn linux_resolve_open_path(
     }
     if linux_path_is_absolute(input, input_len) {
         let mut tmp = [0u8; LINUX_PATH_MAX];
-        let mut i = 0usize;
-        while i < input_len.min(LINUX_PATH_MAX) {
-            tmp[i] = input[i];
-            i += 1;
+        let prefix = b"/LINUXRT";
+        let mut n = 0usize;
+        while n < prefix.len() {
+            tmp[n] = prefix[n];
+            n += 1;
         }
-        let normalized = linux_normalize_path_bytes(out, &tmp[..i]);
+        let mut i = 0usize;
+        while i < input_len && n < LINUX_PATH_MAX {
+            tmp[n] = input[i];
+            i += 1;
+            n += 1;
+        }
+        let normalized = linux_normalize_path_bytes(out, &tmp[..n]);
         if normalized == 0 {
             return Err(linux_neg_errno(2));
         }
@@ -3301,6 +3431,2331 @@ fn linux_socket_push_rx(slot: &mut LinuxSocketSlot, data: &[u8]) -> usize {
     }
     slot.rx_len = slot.rx_len.saturating_add(write_len);
     write_len
+}
+
+fn linux_cmsg_align(len: usize) -> usize {
+    let align = core::mem::size_of::<u64>();
+    (len.saturating_add(align.saturating_sub(1))) & !(align.saturating_sub(1))
+}
+
+fn linux_socket_rights_queue_has_space(slot: &LinuxSocketSlot) -> bool {
+    (slot.rights_count as usize) < LINUX_SOCKET_RIGHTS_QUEUE
+}
+
+fn linux_socket_rights_push_message(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    msg: LinuxSocketRightsMsg,
+) -> bool {
+    if sock_idx >= LINUX_MAX_SOCKETS || !state.sockets[sock_idx].active {
+        return false;
+    }
+    let slot = &mut state.sockets[sock_idx];
+    if !linux_socket_rights_queue_has_space(slot) {
+        return false;
+    }
+    let tail = slot.rights_tail as usize;
+    slot.rights_msgs[tail] = msg;
+    slot.rights_tail = ((tail + 1) % LINUX_SOCKET_RIGHTS_QUEUE) as u8;
+    slot.rights_count = slot.rights_count.saturating_add(1);
+    true
+}
+
+fn linux_socket_rights_pop_message(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+) -> Option<LinuxSocketRightsMsg> {
+    if sock_idx >= LINUX_MAX_SOCKETS || !state.sockets[sock_idx].active {
+        return None;
+    }
+    let slot = &mut state.sockets[sock_idx];
+    if slot.rights_count == 0 {
+        return None;
+    }
+    let head = slot.rights_head as usize;
+    let msg = slot.rights_msgs[head];
+    slot.rights_msgs[head] = LinuxSocketRightsMsg::empty();
+    slot.rights_head = ((head + 1) % LINUX_SOCKET_RIGHTS_QUEUE) as u8;
+    slot.rights_count = slot.rights_count.saturating_sub(1);
+    Some(msg)
+}
+
+fn linux_socket_rights_release_open_slots(
+    state: &mut LinuxShimState,
+    open_slot_indices: &[usize; LINUX_SOCKET_RIGHTS_PER_MSG],
+    count: usize,
+) {
+    let mut i = 0usize;
+    while i < count.min(LINUX_SOCKET_RIGHTS_PER_MSG) {
+        let open_idx = open_slot_indices[i];
+        if open_idx < LINUX_MAX_OPEN_FILES && state.open_files[open_idx].active {
+            linux_close_open_slot(state, open_idx);
+        }
+        i += 1;
+    }
+}
+
+fn linux_socket_rights_clear_queue(state: &mut LinuxShimState, sock_idx: usize) {
+    loop {
+        let Some(msg) = linux_socket_rights_pop_message(state, sock_idx) else {
+            break;
+        };
+        let count = (msg.fd_count as usize).min(LINUX_SOCKET_RIGHTS_PER_MSG);
+        let mut open_slots = [0usize; LINUX_SOCKET_RIGHTS_PER_MSG];
+        let mut i = 0usize;
+        while i < count {
+            open_slots[i] = msg.open_slot_indices[i] as usize;
+            i += 1;
+        }
+        linux_socket_rights_release_open_slots(state, &open_slots, count);
+    }
+}
+
+fn linux_wayland_event_rights_queue_has_space(slot: &LinuxSocketSlot) -> bool {
+    (slot.wayland_event_rights_count as usize) < LINUX_SOCKET_RIGHTS_QUEUE
+}
+
+fn linux_wayland_event_rights_push_message(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    msg: LinuxSocketRightsMsg,
+) -> bool {
+    if sock_idx >= LINUX_MAX_SOCKETS || !state.sockets[sock_idx].active {
+        return false;
+    }
+    let slot = &mut state.sockets[sock_idx];
+    if !linux_wayland_event_rights_queue_has_space(slot) {
+        return false;
+    }
+    let tail = slot.wayland_event_rights_tail as usize;
+    slot.wayland_event_rights_msgs[tail] = msg;
+    slot.wayland_event_rights_tail = ((tail + 1) % LINUX_SOCKET_RIGHTS_QUEUE) as u8;
+    slot.wayland_event_rights_count = slot.wayland_event_rights_count.saturating_add(1);
+    true
+}
+
+fn linux_wayland_event_rights_pop_message(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+) -> Option<LinuxSocketRightsMsg> {
+    if sock_idx >= LINUX_MAX_SOCKETS || !state.sockets[sock_idx].active {
+        return None;
+    }
+    let slot = &mut state.sockets[sock_idx];
+    if slot.wayland_event_rights_count == 0 {
+        return None;
+    }
+    let head = slot.wayland_event_rights_head as usize;
+    let msg = slot.wayland_event_rights_msgs[head];
+    slot.wayland_event_rights_msgs[head] = LinuxSocketRightsMsg::empty();
+    slot.wayland_event_rights_head = ((head + 1) % LINUX_SOCKET_RIGHTS_QUEUE) as u8;
+    slot.wayland_event_rights_count = slot.wayland_event_rights_count.saturating_sub(1);
+    Some(msg)
+}
+
+fn linux_wayland_event_rights_clear_queue(state: &mut LinuxShimState, sock_idx: usize) {
+    loop {
+        let Some(msg) = linux_wayland_event_rights_pop_message(state, sock_idx) else {
+            break;
+        };
+        let count = (msg.fd_count as usize).min(LINUX_SOCKET_RIGHTS_PER_MSG);
+        let mut open_slots = [0usize; LINUX_SOCKET_RIGHTS_PER_MSG];
+        let mut i = 0usize;
+        while i < count {
+            open_slots[i] = msg.open_slot_indices[i] as usize;
+            i += 1;
+        }
+        linux_socket_rights_release_open_slots(state, &open_slots, count);
+    }
+}
+
+fn linux_hold_runtime_fd_for_scm_rights(state: &mut LinuxShimState, fd: i32) -> Result<usize, i64> {
+    let mut slot = linux_build_dup_template(state, fd)?;
+    // Minimal SCM_RIGHTS support for Wayland: runtime-backed descriptors (memfd/files).
+    if slot.kind != LINUX_OPEN_KIND_RUNTIME {
+        return Err(linux_neg_errno(95)); // EOPNOTSUPP
+    }
+    let Some(open_idx) = linux_allocate_open_slot(state) else {
+        return Err(linux_neg_errno(24)); // EMFILE
+    };
+    slot.fd = i32::MIN.saturating_add(open_idx as i32);
+    slot.active = true;
+    state.open_files[open_idx] = slot;
+    state.open_file_count = state.open_file_count.saturating_add(1);
+    Ok(open_idx)
+}
+
+fn linux_hold_open_slot_reference(state: &mut LinuxShimState, open_idx: usize) -> Option<usize> {
+    if open_idx >= LINUX_MAX_OPEN_FILES || !state.open_files[open_idx].active {
+        return None;
+    }
+    let mut slot = state.open_files[open_idx];
+    if slot.kind != LINUX_OPEN_KIND_RUNTIME {
+        return None;
+    }
+    let Some(new_open_idx) = linux_allocate_open_slot(state) else {
+        return None;
+    };
+    slot.fd = i32::MIN.saturating_add(new_open_idx as i32);
+    slot.active = true;
+    state.open_files[new_open_idx] = slot;
+    state.open_file_count = state.open_file_count.saturating_add(1);
+    Some(new_open_idx)
+}
+
+fn linux_wayland_create_runtime_blob_open_slot(
+    state: &mut LinuxShimState,
+    name: &[u8],
+    data: &[u8],
+) -> Option<usize> {
+    let runtime_idx = linux_allocate_runtime_slot(state)?;
+    let mut path = [0u8; LINUX_PATH_MAX];
+    let synthetic_fd = i32::MIN.saturating_add(runtime_idx as i32);
+    let path_len = linux_build_memfd_path(&mut path, name, synthetic_fd);
+    state.runtime_files[runtime_idx] = LinuxRuntimeFileSlot {
+        active: true,
+        size: data.len().min(u64::MAX as usize) as u64,
+        path_len: path_len as u16,
+        path,
+        data_ptr: 0,
+        data_len: 0,
+    };
+    state.runtime_file_count = state.runtime_file_count.saturating_add(1);
+    if linux_runtime_set_blob(state, runtime_idx, data).is_err() {
+        linux_release_runtime_blob(&mut state.runtime_files[runtime_idx]);
+        state.runtime_files[runtime_idx] = LinuxRuntimeFileSlot::empty();
+        if state.runtime_file_count > 0 {
+            state.runtime_file_count -= 1;
+        }
+        return None;
+    }
+
+    let Some(open_idx) = linux_allocate_open_slot(state) else {
+        linux_release_runtime_blob(&mut state.runtime_files[runtime_idx]);
+        state.runtime_files[runtime_idx] = LinuxRuntimeFileSlot::empty();
+        if state.runtime_file_count > 0 {
+            state.runtime_file_count -= 1;
+        }
+        return None;
+    };
+    state.open_files[open_idx] = LinuxOpenFileSlot {
+        active: true,
+        fd: i32::MIN.saturating_add(open_idx as i32),
+        kind: LINUX_OPEN_KIND_RUNTIME,
+        _pad_kind: [0; 3],
+        object_index: runtime_idx,
+        cursor: 0,
+        flags: 0,
+        aux: 0,
+    };
+    state.open_file_count = state.open_file_count.saturating_add(1);
+    Some(open_idx)
+}
+
+fn linux_sendmsg_collect_scm_rights(
+    state: &mut LinuxShimState,
+    msg: &LinuxMsgHdr,
+    out_slots: &mut [usize; LINUX_SOCKET_RIGHTS_PER_MSG],
+) -> Result<usize, i64> {
+    if msg.msg_controllen == 0 {
+        return Ok(0);
+    }
+    if msg.msg_control == 0 {
+        return Err(linux_neg_errno(14)); // EFAULT
+    }
+
+    let header_len = core::mem::size_of::<LinuxCmsgHdr>();
+    let total_len = msg.msg_controllen as usize;
+    let mut offset = 0usize;
+    let mut count = 0usize;
+
+    while offset + header_len <= total_len {
+        let header_ptr = msg.msg_control.saturating_add(offset as u64) as *const LinuxCmsgHdr;
+        let header = unsafe { ptr::read(header_ptr) };
+        let cmsg_len = header.cmsg_len as usize;
+        if cmsg_len < header_len || offset.saturating_add(cmsg_len) > total_len {
+            linux_socket_rights_release_open_slots(state, out_slots, count);
+            return Err(linux_neg_errno(22)); // EINVAL
+        }
+
+        if header.cmsg_level as u64 == LINUX_SOL_SOCKET && header.cmsg_type as u64 == LINUX_SCM_RIGHTS {
+            let data_len = cmsg_len.saturating_sub(header_len);
+            if data_len % core::mem::size_of::<i32>() != 0 {
+                linux_socket_rights_release_open_slots(state, out_slots, count);
+                return Err(linux_neg_errno(22)); // EINVAL
+            }
+            let fd_count = data_len / core::mem::size_of::<i32>();
+            let mut i = 0usize;
+            while i < fd_count {
+                if count >= out_slots.len() {
+                    linux_socket_rights_release_open_slots(state, out_slots, count);
+                    return Err(linux_neg_errno(22)); // EINVAL
+                }
+                let fd_ptr = msg
+                    .msg_control
+                    .saturating_add((offset + header_len + i * core::mem::size_of::<i32>()) as u64)
+                    as *const i32;
+                let passed_fd = unsafe { ptr::read(fd_ptr) };
+                let open_idx = match linux_hold_runtime_fd_for_scm_rights(state, passed_fd) {
+                    Ok(v) => v,
+                    Err(err) => {
+                        linux_socket_rights_release_open_slots(state, out_slots, count);
+                        return Err(err);
+                    }
+                };
+                out_slots[count] = open_idx;
+                count += 1;
+                i += 1;
+            }
+        }
+
+        let step = linux_cmsg_align(cmsg_len);
+        if step == 0 {
+            break;
+        }
+        offset = offset.saturating_add(step);
+    }
+
+    Ok(count)
+}
+
+fn linux_socket_peer_for_rights(state: &LinuxShimState, sock_idx: usize) -> Result<usize, i64> {
+    if sock_idx >= LINUX_MAX_SOCKETS || !state.sockets[sock_idx].active {
+        return Err(linux_neg_errno(9));
+    }
+    if state.sockets[sock_idx].endpoint != LINUX_SOCKET_ENDPOINT_PAIR {
+        return Err(linux_neg_errno(95)); // EOPNOTSUPP
+    }
+    let peer_i = state.sockets[sock_idx].peer_index;
+    if peer_i < 0 {
+        return Err(linux_neg_errno(32)); // EPIPE
+    }
+    let peer_idx = peer_i as usize;
+    if peer_idx >= LINUX_MAX_SOCKETS || !state.sockets[peer_idx].active {
+        return Err(linux_neg_errno(32));
+    }
+    Ok(peer_idx)
+}
+
+fn linux_recvmsg_attach_scm_rights(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    msg: &mut LinuxMsgHdr,
+    flags: u64,
+) {
+    let Some(rights_msg) = linux_socket_rights_pop_message(state, sock_idx) else {
+        msg.msg_controllen = 0;
+        return;
+    };
+
+    let header_len = core::mem::size_of::<LinuxCmsgHdr>();
+    let total_rights = (rights_msg.fd_count as usize).min(LINUX_SOCKET_RIGHTS_PER_MSG);
+    let control_len = msg.msg_controllen as usize;
+    let control_ptr = msg.msg_control;
+    let max_emit = if control_ptr != 0 && control_len >= header_len {
+        (control_len - header_len) / core::mem::size_of::<i32>()
+    } else {
+        0
+    };
+    let set_cloexec = (flags & LINUX_MSG_CMSG_CLOEXEC) != 0;
+
+    let mut emitted = [0i32; LINUX_SOCKET_RIGHTS_PER_MSG];
+    let mut emitted_count = 0usize;
+    let mut truncated = false;
+    let mut i = 0usize;
+
+    while i < total_rights {
+        let held_open_idx = rights_msg.open_slot_indices[i] as usize;
+        if held_open_idx >= LINUX_MAX_OPEN_FILES || !state.open_files[held_open_idx].active {
+            truncated = true;
+            i += 1;
+            continue;
+        }
+
+        if emitted_count < max_emit {
+            let mut template = state.open_files[held_open_idx];
+            template.active = true;
+            if let Some(new_fd) = linux_find_unused_fd(state, state.next_fd) {
+                let installed = linux_install_dup_fd(state, template, new_fd, set_cloexec);
+                if installed >= 0 {
+                    emitted[emitted_count] = new_fd;
+                    emitted_count += 1;
+                } else {
+                    truncated = true;
+                }
+            } else {
+                truncated = true;
+            }
+        } else {
+            truncated = true;
+        }
+
+        linux_close_open_slot(state, held_open_idx);
+        i += 1;
+    }
+
+    if emitted_count > 0 && control_ptr != 0 && control_len >= header_len {
+        let cmsg_len = header_len + emitted_count * core::mem::size_of::<i32>();
+        let cmsg = LinuxCmsgHdr {
+            cmsg_len: cmsg_len as u64,
+            cmsg_level: LINUX_SOL_SOCKET as i32,
+            cmsg_type: LINUX_SCM_RIGHTS as i32,
+        };
+        unsafe {
+            ptr::write(control_ptr as *mut LinuxCmsgHdr, cmsg);
+            let mut j = 0usize;
+            while j < emitted_count {
+                let dst = control_ptr
+                    .saturating_add((header_len + j * core::mem::size_of::<i32>()) as u64)
+                    as *mut i32;
+                ptr::write(dst, emitted[j]);
+                j += 1;
+            }
+        }
+        msg.msg_controllen = linux_cmsg_align(cmsg_len) as u64;
+    } else {
+        msg.msg_controllen = 0;
+        if total_rights > 0 {
+            truncated = true;
+        }
+    }
+
+    if truncated {
+        msg.msg_flags |= LINUX_MSG_CTRUNC;
+    }
+}
+
+fn linux_recvmsg_attach_wayland_event_fds(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    msg: &mut LinuxMsgHdr,
+    flags: u64,
+) {
+    let Some(rights_msg) = linux_wayland_event_rights_pop_message(state, sock_idx) else {
+        msg.msg_controllen = 0;
+        return;
+    };
+
+    let header_len = core::mem::size_of::<LinuxCmsgHdr>();
+    let total_rights = (rights_msg.fd_count as usize).min(LINUX_SOCKET_RIGHTS_PER_MSG);
+    let control_len = msg.msg_controllen as usize;
+    let control_ptr = msg.msg_control;
+    let max_emit = if control_ptr != 0 && control_len >= header_len {
+        (control_len - header_len) / core::mem::size_of::<i32>()
+    } else {
+        0
+    };
+    let set_cloexec = (flags & LINUX_MSG_CMSG_CLOEXEC) != 0;
+
+    let mut emitted = [0i32; LINUX_SOCKET_RIGHTS_PER_MSG];
+    let mut emitted_count = 0usize;
+    let mut truncated = false;
+    let mut i = 0usize;
+
+    while i < total_rights {
+        let held_open_idx = rights_msg.open_slot_indices[i] as usize;
+        if held_open_idx >= LINUX_MAX_OPEN_FILES || !state.open_files[held_open_idx].active {
+            truncated = true;
+            i += 1;
+            continue;
+        }
+
+        if emitted_count < max_emit {
+            let mut template = state.open_files[held_open_idx];
+            template.active = true;
+            if let Some(new_fd) = linux_find_unused_fd(state, state.next_fd) {
+                let installed = linux_install_dup_fd(state, template, new_fd, set_cloexec);
+                if installed >= 0 {
+                    emitted[emitted_count] = new_fd;
+                    emitted_count += 1;
+                } else {
+                    truncated = true;
+                }
+            } else {
+                truncated = true;
+            }
+        } else {
+            truncated = true;
+        }
+
+        linux_close_open_slot(state, held_open_idx);
+        i += 1;
+    }
+
+    if emitted_count > 0 && control_ptr != 0 && control_len >= header_len {
+        let cmsg_len = header_len + emitted_count * core::mem::size_of::<i32>();
+        let cmsg = LinuxCmsgHdr {
+            cmsg_len: cmsg_len as u64,
+            cmsg_level: LINUX_SOL_SOCKET as i32,
+            cmsg_type: LINUX_SCM_RIGHTS as i32,
+        };
+        unsafe {
+            ptr::write(control_ptr as *mut LinuxCmsgHdr, cmsg);
+            let mut j = 0usize;
+            while j < emitted_count {
+                let dst = control_ptr
+                    .saturating_add((header_len + j * core::mem::size_of::<i32>()) as u64)
+                    as *mut i32;
+                ptr::write(dst, emitted[j]);
+                j += 1;
+            }
+        }
+        msg.msg_controllen = linux_cmsg_align(cmsg_len) as u64;
+    } else {
+        msg.msg_controllen = 0;
+        if total_rights > 0 {
+            truncated = true;
+        }
+    }
+
+    if truncated {
+        msg.msg_flags |= LINUX_MSG_CTRUNC;
+    }
+}
+
+fn linux_wayland_align4(len: usize) -> usize {
+    (len.saturating_add(3)) & !3usize
+}
+
+fn linux_wayland_read_u32_le(data: &[u8], off: usize) -> Option<u32> {
+    if off + 4 > data.len() {
+        return None;
+    }
+    Some(u32::from_le_bytes([
+        data[off],
+        data[off + 1],
+        data[off + 2],
+        data[off + 3],
+    ]))
+}
+
+fn linux_wayland_read_i32_le(data: &[u8], off: usize) -> Option<i32> {
+    linux_wayland_read_u32_le(data, off).map(|v| v as i32)
+}
+
+fn linux_wayland_read_string_arg<'a>(data: &'a [u8], off: usize) -> Option<(&'a [u8], usize)> {
+    let str_len = linux_wayland_read_u32_le(data, off)? as usize;
+    let start = off.saturating_add(4);
+    let end = start.saturating_add(str_len);
+    if end > data.len() {
+        return None;
+    }
+    let slice = if str_len > 0 && data[end - 1] == 0 {
+        &data[start..end - 1]
+    } else {
+        &data[start..end]
+    };
+    let next = linux_wayland_align4(end);
+    if next > data.len() {
+        return None;
+    }
+    Some((slice, next))
+}
+
+fn linux_wayland_push_u32(buf: &mut Vec<u8>, value: u32) {
+    let bytes = value.to_le_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        buf.push(bytes[i]);
+        i += 1;
+    }
+}
+
+fn linux_wayland_push_i32(buf: &mut Vec<u8>, value: i32) {
+    let bytes = value.to_le_bytes();
+    let mut i = 0usize;
+    while i < bytes.len() {
+        buf.push(bytes[i]);
+        i += 1;
+    }
+}
+
+fn linux_wayland_push_string(buf: &mut Vec<u8>, value: &[u8]) {
+    let total = value.len().saturating_add(1);
+    linux_wayland_push_u32(buf, total as u32);
+    let mut i = 0usize;
+    while i < value.len() {
+        buf.push(value[i]);
+        i += 1;
+    }
+    buf.push(0);
+    let target_len = linux_wayland_align4(buf.len());
+    while buf.len() < target_len {
+        buf.push(0);
+    }
+}
+
+fn linux_wayland_push_array(buf: &mut Vec<u8>, value: &[u8]) {
+    linux_wayland_push_u32(buf, value.len() as u32);
+    let mut i = 0usize;
+    while i < value.len() {
+        buf.push(value[i]);
+        i += 1;
+    }
+    let target_len = linux_wayland_align4(buf.len());
+    while buf.len() < target_len {
+        buf.push(0);
+    }
+}
+
+fn linux_wayland_push_event(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    object_id: u32,
+    opcode: u16,
+    payload: &[u8],
+) -> bool {
+    if sock_idx >= LINUX_MAX_SOCKETS || !state.sockets[sock_idx].active {
+        return false;
+    }
+    let padded_payload = linux_wayland_align4(payload.len());
+    let total_len = 8usize.saturating_add(padded_payload);
+    if total_len > u16::MAX as usize {
+        return false;
+    }
+    let mut packet = Vec::new();
+    packet.resize(total_len, 0);
+    packet[0..4].copy_from_slice(&object_id.to_le_bytes());
+    packet[4..6].copy_from_slice(&opcode.to_le_bytes());
+    packet[6..8].copy_from_slice(&(total_len as u16).to_le_bytes());
+    let mut i = 0usize;
+    while i < payload.len() {
+        packet[8 + i] = payload[i];
+        i += 1;
+    }
+    linux_socket_push_rx(&mut state.sockets[sock_idx], packet.as_slice()) == packet.len()
+}
+
+fn linux_wayland_push_event_with_fd(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    object_id: u32,
+    opcode: u16,
+    payload: &[u8],
+    open_slot_idx: usize,
+) -> bool {
+    if sock_idx >= LINUX_MAX_SOCKETS
+        || !state.sockets[sock_idx].active
+        || open_slot_idx >= LINUX_MAX_OPEN_FILES
+        || !state.open_files[open_slot_idx].active
+        || open_slot_idx > u16::MAX as usize
+    {
+        if open_slot_idx < LINUX_MAX_OPEN_FILES && state.open_files[open_slot_idx].active {
+            linux_close_open_slot(state, open_slot_idx);
+        }
+        return false;
+    }
+
+    if !linux_wayland_event_rights_queue_has_space(&state.sockets[sock_idx]) {
+        linux_close_open_slot(state, open_slot_idx);
+        return false;
+    }
+    if !linux_wayland_push_event(state, sock_idx, object_id, opcode, payload) {
+        linux_close_open_slot(state, open_slot_idx);
+        return false;
+    }
+
+    let mut rights_msg = LinuxSocketRightsMsg::empty();
+    rights_msg.active = true;
+    rights_msg.fd_count = 1;
+    rights_msg.open_slot_indices[0] = open_slot_idx as u16;
+    if !linux_wayland_event_rights_push_message(state, sock_idx, rights_msg) {
+        linux_close_open_slot(state, open_slot_idx);
+        return false;
+    }
+    true
+}
+
+fn linux_wayland_send_display_delete_id(state: &mut LinuxShimState, sock_idx: usize, id: u32) {
+    if id == 0 {
+        return;
+    }
+    let mut payload = Vec::new();
+    linux_wayland_push_u32(&mut payload, id);
+    let _ = linux_wayland_push_event(state, sock_idx, 1, 1, payload.as_slice());
+}
+
+fn linux_wayland_find_object_index(slot: &LinuxSocketSlot, id: u32) -> Option<usize> {
+    let mut i = 0usize;
+    while i < LINUX_WAYLAND_MAX_OBJECTS {
+        let obj = slot.wayland_objects[i];
+        if obj.active && obj.id == id {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
+}
+
+fn linux_wayland_alloc_object(
+    slot: &mut LinuxSocketSlot,
+    id: u32,
+    kind: u8,
+    version: u32,
+    aux_open_slot: i32,
+) -> bool {
+    if id == 0 {
+        return false;
+    }
+    if linux_wayland_find_object_index(slot, id).is_some() {
+        return false;
+    }
+    let mut i = 0usize;
+    while i < LINUX_WAYLAND_MAX_OBJECTS {
+        if !slot.wayland_objects[i].active {
+            slot.wayland_objects[i] = LinuxWaylandObjectSlot {
+                active: true,
+                id,
+                kind,
+                _pad0: [0; 3],
+                version,
+                aux_open_slot,
+                aux_id: 0,
+                aux_i0: 0,
+                aux_i1: 0,
+                aux_i2: 0,
+                aux_u0: 0,
+            };
+            return true;
+        }
+        i += 1;
+    }
+    false
+}
+
+fn linux_wayland_release_object_by_index(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    obj_idx: usize,
+    emit_delete_id: bool,
+) {
+    if sock_idx >= LINUX_MAX_SOCKETS || obj_idx >= LINUX_WAYLAND_MAX_OBJECTS {
+        return;
+    }
+    if !state.sockets[sock_idx].active {
+        return;
+    }
+    let obj = state.sockets[sock_idx].wayland_objects[obj_idx];
+    if !obj.active {
+        return;
+    }
+    state.sockets[sock_idx].wayland_objects[obj_idx] = LinuxWaylandObjectSlot::empty();
+
+    if obj.aux_open_slot >= 0 {
+        let open_idx = obj.aux_open_slot as usize;
+        if open_idx < LINUX_MAX_OPEN_FILES && state.open_files[open_idx].active {
+            linux_close_open_slot(state, open_idx);
+        }
+    }
+
+    if emit_delete_id && obj.id > 1 {
+        linux_wayland_send_display_delete_id(state, sock_idx, obj.id);
+    }
+}
+
+fn linux_wayland_release_all_socket_objects(state: &mut LinuxShimState, sock_idx: usize) {
+    if sock_idx >= LINUX_MAX_SOCKETS || !state.sockets[sock_idx].active {
+        return;
+    }
+    let mut i = 0usize;
+    while i < LINUX_WAYLAND_MAX_OBJECTS {
+        if state.sockets[sock_idx].wayland_objects[i].active {
+            linux_wayland_release_object_by_index(state, sock_idx, i, false);
+        }
+        i += 1;
+    }
+}
+
+fn linux_wayland_socket_init(state: &mut LinuxShimState, sock_idx: usize) {
+    if sock_idx >= LINUX_MAX_SOCKETS || !state.sockets[sock_idx].active {
+        return;
+    }
+    state.sockets[sock_idx].wayland_req_len = 0;
+    state.sockets[sock_idx].wayland_serial = 1;
+    state.sockets[sock_idx].rights_head = 0;
+    state.sockets[sock_idx].rights_tail = 0;
+    state.sockets[sock_idx].rights_count = 0;
+    state.sockets[sock_idx].wayland_event_rights_head = 0;
+    state.sockets[sock_idx].wayland_event_rights_tail = 0;
+    state.sockets[sock_idx].wayland_event_rights_count = 0;
+    state.sockets[sock_idx].rights_msgs = [LinuxSocketRightsMsg::empty(); LINUX_SOCKET_RIGHTS_QUEUE];
+    state.sockets[sock_idx].wayland_event_rights_msgs =
+        [LinuxSocketRightsMsg::empty(); LINUX_SOCKET_RIGHTS_QUEUE];
+    state.sockets[sock_idx].wayland_objects = [LinuxWaylandObjectSlot::empty(); LINUX_WAYLAND_MAX_OBJECTS];
+    let _ = linux_wayland_alloc_object(
+        &mut state.sockets[sock_idx],
+        1,
+        LINUX_WL_OBJ_DISPLAY,
+        1,
+        -1,
+    );
+}
+
+fn linux_wayland_find_related_object_index(
+    slot: &LinuxSocketSlot,
+    kind: u8,
+    aux_id: u32,
+) -> Option<usize> {
+    let mut i = 0usize;
+    while i < LINUX_WAYLAND_MAX_OBJECTS {
+        let obj = slot.wayland_objects[i];
+        if obj.active && obj.kind == kind && obj.aux_id == aux_id {
+            return Some(i);
+        }
+        i += 1;
+    }
+    None
+}
+
+fn linux_wayland_find_first_object_id(slot: &LinuxSocketSlot, kind: u8) -> Option<u32> {
+    let mut i = 0usize;
+    while i < LINUX_WAYLAND_MAX_OBJECTS {
+        let obj = slot.wayland_objects[i];
+        if obj.active && obj.kind == kind {
+            return Some(obj.id);
+        }
+        i += 1;
+    }
+    None
+}
+
+fn linux_wayland_next_serial(state: &mut LinuxShimState, sock_idx: usize) -> u32 {
+    let serial = state.sockets[sock_idx].wayland_serial;
+    state.sockets[sock_idx].wayland_serial = state.sockets[sock_idx].wayland_serial.saturating_add(1);
+    serial
+}
+
+fn linux_wayland_fixed_from_i32(value: i32) -> i32 {
+    value.saturating_mul(256)
+}
+
+fn linux_wayland_evdev_key_from_char(code: u32) -> Option<u32> {
+    let ch = core::char::from_u32(code)?;
+    let lower = ch.to_ascii_lowercase();
+    let key = match lower {
+        '1' | '!' => 2,
+        '2' | '@' => 3,
+        '3' | '#' => 4,
+        '4' | '$' => 5,
+        '5' | '%' => 6,
+        '6' | '^' => 7,
+        '7' | '&' => 8,
+        '8' | '*' => 9,
+        '9' | '(' => 10,
+        '0' | ')' => 11,
+        '-' | '_' => 12,
+        '=' | '+' => 13,
+        '\u{8}' | '\u{7f}' => 14,
+        '\t' => 15,
+        'q' => 16,
+        'w' => 17,
+        'e' => 18,
+        'r' => 19,
+        't' => 20,
+        'y' => 21,
+        'u' => 22,
+        'i' => 23,
+        'o' => 24,
+        'p' => 25,
+        '[' | '{' => 26,
+        ']' | '}' => 27,
+        '\n' | '\r' => 28,
+        'a' => 30,
+        's' => 31,
+        'd' => 32,
+        'f' => 33,
+        'g' => 34,
+        'h' => 35,
+        'j' => 36,
+        'k' => 37,
+        'l' => 38,
+        ';' | ':' => 39,
+        '\'' | '"' => 40,
+        '`' | '~' => 41,
+        '\\' | '|' => 43,
+        'z' => 44,
+        'x' => 45,
+        'c' => 46,
+        'v' => 47,
+        'b' => 48,
+        'n' => 49,
+        'm' => 50,
+        ',' | '<' => 51,
+        '.' | '>' => 52,
+        '/' | '?' => 53,
+        ' ' => 57,
+        '\u{1b}' => 1,
+        _ => return None,
+    };
+    Some(key)
+}
+
+fn linux_wayland_pick_focus_surface_id(slot: &LinuxSocketSlot) -> Option<u32> {
+    let mut i = 0usize;
+    while i < LINUX_WAYLAND_MAX_OBJECTS {
+        let obj = slot.wayland_objects[i];
+        if obj.active && obj.kind == LINUX_WL_OBJ_XDG_SURFACE && obj.aux_id != 0 {
+            if let Some(surface_idx) = linux_wayland_find_object_index(slot, obj.aux_id) {
+                if slot.wayland_objects[surface_idx].active
+                    && slot.wayland_objects[surface_idx].kind == LINUX_WL_OBJ_SURFACE
+                {
+                    return Some(obj.aux_id);
+                }
+            }
+        }
+        i += 1;
+    }
+    i = 0;
+    while i < LINUX_WAYLAND_MAX_OBJECTS {
+        let obj = slot.wayland_objects[i];
+        if obj.active && obj.kind == LINUX_WL_OBJ_SURFACE {
+            return Some(obj.id);
+        }
+        i += 1;
+    }
+    None
+}
+
+fn linux_wayland_pump_input_events(state: &mut LinuxShimState, sock_idx: usize) {
+    if sock_idx >= LINUX_MAX_SOCKETS || !state.sockets[sock_idx].active {
+        return;
+    }
+    let Some(focus_surface_id) = linux_wayland_pick_focus_surface_id(&state.sockets[sock_idx]) else {
+        return;
+    };
+
+    let mut pointer_indices = [0usize; LINUX_WAYLAND_MAX_OBJECTS];
+    let mut pointer_count = 0usize;
+    let mut keyboard_indices = [0usize; LINUX_WAYLAND_MAX_OBJECTS];
+    let mut keyboard_count = 0usize;
+    let mut i = 0usize;
+    while i < LINUX_WAYLAND_MAX_OBJECTS {
+        let obj = state.sockets[sock_idx].wayland_objects[i];
+        if obj.active {
+            if obj.kind == LINUX_WL_OBJ_POINTER && pointer_count < pointer_indices.len() {
+                pointer_indices[pointer_count] = i;
+                pointer_count += 1;
+            } else if obj.kind == LINUX_WL_OBJ_KEYBOARD && keyboard_count < keyboard_indices.len() {
+                keyboard_indices[keyboard_count] = i;
+                keyboard_count += 1;
+            }
+        }
+        i += 1;
+    }
+    if pointer_count == 0 && keyboard_count == 0 {
+        return;
+    }
+
+    loop {
+        let Some(ev) = linux_gfx_bridge_pop_input_event() else {
+            break;
+        };
+        let time_ms = (timer::ticks() & 0xFFFF_FFFF) as u32;
+        if (ev.kind == 1 || ev.kind == 3) && pointer_count > 0 {
+            let px = ev.x.clamp(0, LINUX_GFX_MAX_WIDTH.saturating_sub(1) as i32);
+            let py = ev.y.clamp(0, LINUX_GFX_MAX_HEIGHT.saturating_sub(1) as i32);
+            let fx = linux_wayland_fixed_from_i32(px);
+            let fy = linux_wayland_fixed_from_i32(py);
+
+            let mut p = 0usize;
+            while p < pointer_count {
+                let obj_idx = pointer_indices[p];
+                if obj_idx >= LINUX_WAYLAND_MAX_OBJECTS
+                    || !state.sockets[sock_idx].wayland_objects[obj_idx].active
+                    || state.sockets[sock_idx].wayland_objects[obj_idx].kind != LINUX_WL_OBJ_POINTER
+                {
+                    p += 1;
+                    continue;
+                }
+                let pointer_id = state.sockets[sock_idx].wayland_objects[obj_idx].id;
+                let focused_surface = state.sockets[sock_idx].wayland_objects[obj_idx].aux_id;
+                if focused_surface != focus_surface_id {
+                    if focused_surface != 0 {
+                        let serial = linux_wayland_next_serial(state, sock_idx);
+                        let mut payload = Vec::new();
+                        linux_wayland_push_u32(&mut payload, serial);
+                        linux_wayland_push_u32(&mut payload, focused_surface);
+                        let _ = linux_wayland_push_event(state, sock_idx, pointer_id, 1, payload.as_slice());
+                    }
+                    let serial = linux_wayland_next_serial(state, sock_idx);
+                    let mut payload = Vec::new();
+                    linux_wayland_push_u32(&mut payload, serial);
+                    linux_wayland_push_u32(&mut payload, focus_surface_id);
+                    linux_wayland_push_i32(&mut payload, fx);
+                    linux_wayland_push_i32(&mut payload, fy);
+                    let _ = linux_wayland_push_event(state, sock_idx, pointer_id, 0, payload.as_slice());
+                    state.sockets[sock_idx].wayland_objects[obj_idx].aux_id = focus_surface_id;
+                }
+
+                if ev.kind == 1 {
+                    let mut payload = Vec::new();
+                    linux_wayland_push_u32(&mut payload, time_ms);
+                    linux_wayland_push_i32(&mut payload, fx);
+                    linux_wayland_push_i32(&mut payload, fy);
+                    let _ = linux_wayland_push_event(state, sock_idx, pointer_id, 2, payload.as_slice());
+
+                    let previous = state.sockets[sock_idx].wayland_objects[obj_idx].aux_i2 as u8;
+                    let current = ev.down;
+                    let left_changed = (previous & 0x1) != (current & 0x1);
+                    let right_changed = (previous & 0x2) != (current & 0x2);
+                    if left_changed {
+                        let serial = linux_wayland_next_serial(state, sock_idx);
+                        let mut button_payload = Vec::new();
+                        linux_wayland_push_u32(&mut button_payload, serial);
+                        linux_wayland_push_u32(&mut button_payload, time_ms);
+                        linux_wayland_push_u32(&mut button_payload, LINUX_WL_BUTTON_LEFT);
+                        linux_wayland_push_u32(
+                            &mut button_payload,
+                            if (current & 0x1) != 0 { 1 } else { 0 },
+                        );
+                        let _ =
+                            linux_wayland_push_event(state, sock_idx, pointer_id, 3, button_payload.as_slice());
+                    }
+                    if right_changed {
+                        let serial = linux_wayland_next_serial(state, sock_idx);
+                        let mut button_payload = Vec::new();
+                        linux_wayland_push_u32(&mut button_payload, serial);
+                        linux_wayland_push_u32(&mut button_payload, time_ms);
+                        linux_wayland_push_u32(&mut button_payload, LINUX_WL_BUTTON_RIGHT);
+                        linux_wayland_push_u32(
+                            &mut button_payload,
+                            if (current & 0x2) != 0 { 1 } else { 0 },
+                        );
+                        let _ =
+                            linux_wayland_push_event(state, sock_idx, pointer_id, 3, button_payload.as_slice());
+                    }
+                    state.sockets[sock_idx].wayland_objects[obj_idx].aux_i2 = current as i32;
+                } else if ev.kind == 3 {
+                    let mut steps = (ev.code as i32).max(1).min(24);
+                    if ev.down != 0 {
+                        steps = -steps;
+                    }
+                    let mut payload = Vec::new();
+                    linux_wayland_push_u32(&mut payload, time_ms);
+                    linux_wayland_push_u32(&mut payload, LINUX_WL_AXIS_VERTICAL_SCROLL);
+                    linux_wayland_push_i32(
+                        &mut payload,
+                        linux_wayland_fixed_from_i32(steps.saturating_mul(12)),
+                    );
+                    let _ = linux_wayland_push_event(state, sock_idx, pointer_id, 4, payload.as_slice());
+                }
+                state.sockets[sock_idx].wayland_objects[obj_idx].aux_i0 = px;
+                state.sockets[sock_idx].wayland_objects[obj_idx].aux_i1 = py;
+                p += 1;
+            }
+        } else if ev.kind == 2 && keyboard_count > 0 {
+            let Some(key) = linux_wayland_evdev_key_from_char(ev.code) else {
+                continue;
+            };
+            let key_state = if ev.down != 0 {
+                LINUX_WL_KEY_STATE_PRESSED
+            } else {
+                LINUX_WL_KEY_STATE_RELEASED
+            };
+            let mut k = 0usize;
+            while k < keyboard_count {
+                let obj_idx = keyboard_indices[k];
+                if obj_idx >= LINUX_WAYLAND_MAX_OBJECTS
+                    || !state.sockets[sock_idx].wayland_objects[obj_idx].active
+                    || state.sockets[sock_idx].wayland_objects[obj_idx].kind != LINUX_WL_OBJ_KEYBOARD
+                {
+                    k += 1;
+                    continue;
+                }
+
+                let keyboard_id = state.sockets[sock_idx].wayland_objects[obj_idx].id;
+                let focused_surface = state.sockets[sock_idx].wayland_objects[obj_idx].aux_id;
+                if focused_surface != focus_surface_id {
+                    if focused_surface != 0 {
+                        let serial = linux_wayland_next_serial(state, sock_idx);
+                        let mut payload = Vec::new();
+                        linux_wayland_push_u32(&mut payload, serial);
+                        linux_wayland_push_u32(&mut payload, focused_surface);
+                        let _ = linux_wayland_push_event(state, sock_idx, keyboard_id, 2, payload.as_slice());
+                    }
+
+                    let serial = linux_wayland_next_serial(state, sock_idx);
+                    let mut payload = Vec::new();
+                    linux_wayland_push_u32(&mut payload, serial);
+                    linux_wayland_push_u32(&mut payload, focus_surface_id);
+                    linux_wayland_push_array(&mut payload, &[]);
+                    let _ = linux_wayland_push_event(state, sock_idx, keyboard_id, 1, payload.as_slice());
+
+                    let mut mods_payload = Vec::new();
+                    linux_wayland_push_u32(&mut mods_payload, serial);
+                    linux_wayland_push_u32(&mut mods_payload, 0);
+                    linux_wayland_push_u32(&mut mods_payload, 0);
+                    linux_wayland_push_u32(&mut mods_payload, 0);
+                    linux_wayland_push_u32(&mut mods_payload, 0);
+                    let _ = linux_wayland_push_event(state, sock_idx, keyboard_id, 4, mods_payload.as_slice());
+
+                    state.sockets[sock_idx].wayland_objects[obj_idx].aux_id = focus_surface_id;
+                }
+
+                let serial = linux_wayland_next_serial(state, sock_idx);
+                let mut key_payload = Vec::new();
+                linux_wayland_push_u32(&mut key_payload, serial);
+                linux_wayland_push_u32(&mut key_payload, time_ms);
+                linux_wayland_push_u32(&mut key_payload, key);
+                linux_wayland_push_u32(&mut key_payload, key_state);
+                let _ = linux_wayland_push_event(state, sock_idx, keyboard_id, 3, key_payload.as_slice());
+                k += 1;
+            }
+        }
+    }
+}
+
+fn linux_wayland_send_xdg_surface_configure(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    xdg_surface_idx: usize,
+) {
+    if sock_idx >= LINUX_MAX_SOCKETS
+        || !state.sockets[sock_idx].active
+        || xdg_surface_idx >= LINUX_WAYLAND_MAX_OBJECTS
+        || !state.sockets[sock_idx].wayland_objects[xdg_surface_idx].active
+        || state.sockets[sock_idx].wayland_objects[xdg_surface_idx].kind != LINUX_WL_OBJ_XDG_SURFACE
+    {
+        return;
+    }
+
+    let xdg_surface_id = state.sockets[sock_idx].wayland_objects[xdg_surface_idx].id;
+    let mut width = LINUX_GFX_MAX_WIDTH as i32;
+    let mut height = LINUX_GFX_MAX_HEIGHT as i32;
+    if let Some(toplevel_idx) = linux_wayland_find_related_object_index(
+        &state.sockets[sock_idx],
+        LINUX_WL_OBJ_XDG_TOPLEVEL,
+        xdg_surface_id,
+    ) {
+        let toplevel = state.sockets[sock_idx].wayland_objects[toplevel_idx];
+        if toplevel.aux_i1 > 0 {
+            width = toplevel.aux_i1;
+        }
+        if toplevel.aux_i2 > 0 {
+            height = toplevel.aux_i2;
+        }
+        let mut payload = Vec::new();
+        linux_wayland_push_i32(&mut payload, width);
+        linux_wayland_push_i32(&mut payload, height);
+        linux_wayland_push_array(&mut payload, &[]);
+        let _ = linux_wayland_push_event(state, sock_idx, toplevel.id, 0, payload.as_slice());
+    }
+
+    let serial = linux_wayland_next_serial(state, sock_idx);
+    let mut payload = Vec::new();
+    linux_wayland_push_u32(&mut payload, serial);
+    let _ = linux_wayland_push_event(state, sock_idx, xdg_surface_id, 0, payload.as_slice());
+    state.sockets[sock_idx].wayland_objects[xdg_surface_idx].aux_u0 = serial;
+}
+
+fn linux_wayland_send_seat_info(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    seat_id: u32,
+    seat_version: u32,
+) {
+    let mut payload = Vec::new();
+    linux_wayland_push_u32(
+        &mut payload,
+        LINUX_WL_SEAT_CAP_POINTER | LINUX_WL_SEAT_CAP_KEYBOARD,
+    );
+    let _ = linux_wayland_push_event(state, sock_idx, seat_id, 0, payload.as_slice());
+    if seat_version >= 2 {
+        payload.clear();
+        linux_wayland_push_string(&mut payload, b"goos-seat0");
+        let _ = linux_wayland_push_event(state, sock_idx, seat_id, 1, payload.as_slice());
+    }
+}
+
+fn linux_wayland_send_output_info(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    output_id: u32,
+    output_version: u32,
+) {
+    let mut payload = Vec::new();
+    linux_wayland_push_i32(&mut payload, 0);
+    linux_wayland_push_i32(&mut payload, 0);
+    linux_wayland_push_i32(&mut payload, 270);
+    linux_wayland_push_i32(&mut payload, 152);
+    linux_wayland_push_i32(&mut payload, 0); // subpixel unknown
+    linux_wayland_push_string(&mut payload, b"GOOS");
+    linux_wayland_push_string(&mut payload, b"Virtual Wayland Output");
+    linux_wayland_push_i32(&mut payload, 0); // normal transform
+    let _ = linux_wayland_push_event(state, sock_idx, output_id, 0, payload.as_slice());
+
+    payload.clear();
+    linux_wayland_push_u32(
+        &mut payload,
+        LINUX_WL_OUTPUT_MODE_CURRENT | LINUX_WL_OUTPUT_MODE_PREFERRED,
+    );
+    linux_wayland_push_i32(&mut payload, LINUX_GFX_MAX_WIDTH as i32);
+    linux_wayland_push_i32(&mut payload, LINUX_GFX_MAX_HEIGHT as i32);
+    linux_wayland_push_i32(&mut payload, 60_000); // mHz
+    let _ = linux_wayland_push_event(state, sock_idx, output_id, 1, payload.as_slice());
+
+    if output_version >= 2 {
+        payload.clear();
+        linux_wayland_push_i32(&mut payload, 1);
+        let _ = linux_wayland_push_event(state, sock_idx, output_id, 3, payload.as_slice());
+        let _ = linux_wayland_push_event(state, sock_idx, output_id, 2, &[]);
+    }
+}
+
+fn linux_wayland_present_shm_buffer(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    buffer_id: u32,
+) -> bool {
+    if sock_idx >= LINUX_MAX_SOCKETS || !state.sockets[sock_idx].active || buffer_id == 0 {
+        return false;
+    }
+    let Some(buffer_idx) = linux_wayland_find_object_index(&state.sockets[sock_idx], buffer_id) else {
+        return false;
+    };
+    let buffer = state.sockets[sock_idx].wayland_objects[buffer_idx];
+    if !buffer.active || buffer.kind != LINUX_WL_OBJ_BUFFER || buffer.aux_open_slot < 0 {
+        return false;
+    }
+
+    let open_idx = buffer.aux_open_slot as usize;
+    if open_idx >= LINUX_MAX_OPEN_FILES || !state.open_files[open_idx].active {
+        return false;
+    }
+    if state.open_files[open_idx].kind != LINUX_OPEN_KIND_RUNTIME {
+        return false;
+    }
+    let runtime_idx = state.open_files[open_idx].object_index;
+    if runtime_idx >= LINUX_MAX_RUNTIME_FILES || !state.runtime_files[runtime_idx].active {
+        return false;
+    }
+    if linux_runtime_materialize_slot_if_needed(state, runtime_idx).is_err() {
+        return false;
+    }
+    let runtime = state.runtime_files[runtime_idx];
+    if !runtime.active || runtime.data_ptr == 0 || runtime.data_len == 0 {
+        return false;
+    }
+
+    let format = buffer.aux_u0;
+    if format != LINUX_WL_SHM_FORMAT_ARGB8888 && format != LINUX_WL_SHM_FORMAT_XRGB8888 {
+        return false;
+    }
+    let offset = buffer.aux_i0.max(0) as usize;
+    let width = buffer.aux_i1.max(0) as usize;
+    let height = buffer.aux_i2.max(0) as usize;
+    let stride = buffer.aux_id as usize;
+    if width == 0 || height == 0 {
+        return false;
+    }
+    let row_span = width.saturating_mul(4);
+    if row_span == 0 || stride < row_span {
+        return false;
+    }
+
+    let readable = runtime.size.min(runtime.data_len);
+    if readable == 0 || offset >= readable as usize {
+        return false;
+    }
+    let last_row = height.saturating_sub(1).saturating_mul(stride);
+    let needed = offset.saturating_add(last_row).saturating_add(row_span);
+    if needed > readable as usize {
+        return false;
+    }
+
+    let open_w = width.min(LINUX_GFX_MAX_WIDTH).max(64) as u32;
+    let open_h = height.min(LINUX_GFX_MAX_HEIGHT).max(64) as u32;
+    let bridge_active = unsafe { LINUX_GFX_BRIDGE.active };
+    if !bridge_active {
+        let _ = linux_gfx_bridge_open(open_w, open_h);
+    }
+    unsafe {
+        let bridge = &mut LINUX_GFX_BRIDGE;
+        if !bridge.active {
+            return false;
+        }
+
+        let dst_w = (bridge.width as usize).min(LINUX_GFX_MAX_WIDTH).min(width);
+        let dst_h = (bridge.height as usize).min(LINUX_GFX_MAX_HEIGHT).min(height);
+        if dst_w == 0 || dst_h == 0 {
+            return false;
+        }
+        let bw = (bridge.width as usize).min(LINUX_GFX_MAX_WIDTH);
+        let bh = (bridge.height as usize).min(LINUX_GFX_MAX_HEIGHT);
+        let frame_len = bw.saturating_mul(bh).min(LINUX_GFX_PIXELS.len());
+        let mut clear_i = 0usize;
+        while clear_i < frame_len {
+            LINUX_GFX_PIXELS[clear_i] = 0x10141A;
+            clear_i += 1;
+        }
+
+        let mut y = 0usize;
+        while y < dst_h {
+            let src_row = offset.saturating_add(y.saturating_mul(stride));
+            let src_ptr = runtime.data_ptr.saturating_add(src_row as u64) as *const u8;
+            let dst_row = y.saturating_mul(bw);
+            let mut x = 0usize;
+            while x < dst_w {
+                let px = x.saturating_mul(4);
+                let b = ptr::read(src_ptr.add(px)) as u32;
+                let g = ptr::read(src_ptr.add(px + 1)) as u32;
+                let r = ptr::read(src_ptr.add(px + 2)) as u32;
+                let dst_idx = dst_row.saturating_add(x);
+                if dst_idx < LINUX_GFX_PIXELS.len() {
+                    LINUX_GFX_PIXELS[dst_idx] = (r << 16) | (g << 8) | b;
+                }
+                x += 1;
+            }
+            y += 1;
+        }
+        bridge.frame_seq = bridge.frame_seq.saturating_add(1);
+        bridge.dirty = true;
+        linux_gfx_bridge_present_direct_locked(bridge);
+    }
+    linux_gfx_bridge_set_status("Wayland subset: frame wl_shm presentado.");
+    true
+}
+
+fn linux_wayland_surface_commit(state: &mut LinuxShimState, sock_idx: usize, surface_idx: usize) {
+    if sock_idx >= LINUX_MAX_SOCKETS
+        || !state.sockets[sock_idx].active
+        || surface_idx >= LINUX_WAYLAND_MAX_OBJECTS
+        || !state.sockets[sock_idx].wayland_objects[surface_idx].active
+        || state.sockets[sock_idx].wayland_objects[surface_idx].kind != LINUX_WL_OBJ_SURFACE
+    {
+        return;
+    }
+
+    let surface_id = state.sockets[sock_idx].wayland_objects[surface_idx].id;
+    if state.sockets[sock_idx].wayland_objects[surface_idx].aux_u0 == 0 {
+        if let Some(output_id) = linux_wayland_find_first_object_id(&state.sockets[sock_idx], LINUX_WL_OBJ_OUTPUT) {
+            let mut payload = Vec::new();
+            linux_wayland_push_u32(&mut payload, output_id);
+            let _ = linux_wayland_push_event(state, sock_idx, surface_id, 0, payload.as_slice());
+            state.sockets[sock_idx].wayland_objects[surface_idx].aux_u0 = 1;
+        }
+    }
+    let buffer_id = state.sockets[sock_idx].wayland_objects[surface_idx].aux_id;
+    if buffer_id != 0 {
+        let _ = linux_wayland_present_shm_buffer(state, sock_idx, buffer_id);
+        let _ = linux_wayland_push_event(state, sock_idx, buffer_id, 0, &[]);
+    }
+
+    if let Some(xdg_surface_idx) = linux_wayland_find_related_object_index(
+        &state.sockets[sock_idx],
+        LINUX_WL_OBJ_XDG_SURFACE,
+        surface_id,
+    ) {
+        if state.sockets[sock_idx].wayland_objects[xdg_surface_idx].aux_u0 == 0 {
+            linux_wayland_send_xdg_surface_configure(state, sock_idx, xdg_surface_idx);
+        }
+    }
+}
+
+fn linux_wayland_send_registry_global(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    registry_id: u32,
+    name: u32,
+    interface: &[u8],
+    version: u32,
+) {
+    let mut payload = Vec::new();
+    linux_wayland_push_u32(&mut payload, name);
+    linux_wayland_push_string(&mut payload, interface);
+    linux_wayland_push_u32(&mut payload, version);
+    let _ = linux_wayland_push_event(state, sock_idx, registry_id, 0, payload.as_slice());
+}
+
+fn linux_wayland_send_registry_globals(state: &mut LinuxShimState, sock_idx: usize, registry_id: u32) {
+    linux_wayland_send_registry_global(
+        state,
+        sock_idx,
+        registry_id,
+        LINUX_WL_GLOBAL_COMPOSITOR,
+        b"wl_compositor",
+        4,
+    );
+    linux_wayland_send_registry_global(
+        state,
+        sock_idx,
+        registry_id,
+        LINUX_WL_GLOBAL_SHM,
+        b"wl_shm",
+        1,
+    );
+    linux_wayland_send_registry_global(
+        state,
+        sock_idx,
+        registry_id,
+        LINUX_WL_GLOBAL_XDG_WM_BASE,
+        b"xdg_wm_base",
+        6,
+    );
+    linux_wayland_send_registry_global(
+        state,
+        sock_idx,
+        registry_id,
+        LINUX_WL_GLOBAL_SEAT,
+        b"wl_seat",
+        7,
+    );
+    linux_wayland_send_registry_global(
+        state,
+        sock_idx,
+        registry_id,
+        LINUX_WL_GLOBAL_OUTPUT,
+        b"wl_output",
+        3,
+    );
+    linux_wayland_send_registry_global(
+        state,
+        sock_idx,
+        registry_id,
+        LINUX_WL_GLOBAL_DATA_DEVICE_MANAGER,
+        b"wl_data_device_manager",
+        3,
+    );
+    linux_wayland_send_registry_global(
+        state,
+        sock_idx,
+        registry_id,
+        LINUX_WL_GLOBAL_SUBCOMPOSITOR,
+        b"wl_subcompositor",
+        1,
+    );
+}
+
+fn linux_wayland_send_shm_formats(state: &mut LinuxShimState, sock_idx: usize, shm_id: u32) {
+    let mut payload = Vec::new();
+    linux_wayland_push_u32(&mut payload, LINUX_WL_SHM_FORMAT_XRGB8888);
+    let _ = linux_wayland_push_event(state, sock_idx, shm_id, 0, payload.as_slice());
+    payload.clear();
+    linux_wayland_push_u32(&mut payload, LINUX_WL_SHM_FORMAT_ARGB8888);
+    let _ = linux_wayland_push_event(state, sock_idx, shm_id, 0, payload.as_slice());
+}
+
+fn linux_wayland_dispatch_display_request(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    opcode: u16,
+    args: &[u8],
+) {
+    match opcode {
+        0 => {
+            let Some(callback_id) = linux_wayland_read_u32_le(args, 0) else {
+                return;
+            };
+            if !linux_wayland_alloc_object(
+                &mut state.sockets[sock_idx],
+                callback_id,
+                LINUX_WL_OBJ_CALLBACK,
+                1,
+                -1,
+            ) {
+                return;
+            }
+            let serial = state.sockets[sock_idx].wayland_serial;
+            state.sockets[sock_idx].wayland_serial = state.sockets[sock_idx].wayland_serial.saturating_add(1);
+            let mut payload = Vec::new();
+            linux_wayland_push_u32(&mut payload, serial);
+            let _ = linux_wayland_push_event(state, sock_idx, callback_id, 0, payload.as_slice());
+        }
+        1 => {
+            let Some(registry_id) = linux_wayland_read_u32_le(args, 0) else {
+                return;
+            };
+            if !linux_wayland_alloc_object(
+                &mut state.sockets[sock_idx],
+                registry_id,
+                LINUX_WL_OBJ_REGISTRY,
+                1,
+                -1,
+            ) {
+                return;
+            }
+            linux_wayland_send_registry_globals(state, sock_idx, registry_id);
+        }
+        _ => {}
+    }
+}
+
+fn linux_wayland_dispatch_registry_request(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    opcode: u16,
+    args: &[u8],
+) {
+    if opcode != 0 {
+        return;
+    }
+    let Some(global_name) = linux_wayland_read_u32_le(args, 0) else {
+        return;
+    };
+    let Some((_iface, next)) = linux_wayland_read_string_arg(args, 4) else {
+        return;
+    };
+    let Some(version) = linux_wayland_read_u32_le(args, next) else {
+        return;
+    };
+    let Some(new_id) = linux_wayland_read_u32_le(args, next.saturating_add(4)) else {
+        return;
+    };
+
+    match global_name {
+        LINUX_WL_GLOBAL_COMPOSITOR => {
+            let ver = version.min(4);
+            let _ = linux_wayland_alloc_object(
+                &mut state.sockets[sock_idx],
+                new_id,
+                LINUX_WL_OBJ_COMPOSITOR,
+                ver,
+                -1,
+            );
+        }
+        LINUX_WL_GLOBAL_SHM => {
+            let ver = version.min(1);
+            if linux_wayland_alloc_object(
+                &mut state.sockets[sock_idx],
+                new_id,
+                LINUX_WL_OBJ_SHM,
+                ver,
+                -1,
+            ) {
+                linux_wayland_send_shm_formats(state, sock_idx, new_id);
+            }
+        }
+        LINUX_WL_GLOBAL_XDG_WM_BASE => {
+            let _ = linux_wayland_alloc_object(
+                &mut state.sockets[sock_idx],
+                new_id,
+                LINUX_WL_OBJ_XDG_WM_BASE,
+                version.min(6),
+                -1,
+            );
+        }
+        LINUX_WL_GLOBAL_SEAT => {
+            let ver = version.min(7);
+            if linux_wayland_alloc_object(
+                &mut state.sockets[sock_idx],
+                new_id,
+                LINUX_WL_OBJ_SEAT,
+                ver,
+                -1,
+            ) {
+                linux_wayland_send_seat_info(state, sock_idx, new_id, ver);
+            }
+        }
+        LINUX_WL_GLOBAL_OUTPUT => {
+            let ver = version.min(3);
+            if linux_wayland_alloc_object(
+                &mut state.sockets[sock_idx],
+                new_id,
+                LINUX_WL_OBJ_OUTPUT,
+                ver,
+                -1,
+            ) {
+                linux_wayland_send_output_info(state, sock_idx, new_id, ver);
+            }
+        }
+        LINUX_WL_GLOBAL_DATA_DEVICE_MANAGER => {
+            let _ = linux_wayland_alloc_object(
+                &mut state.sockets[sock_idx],
+                new_id,
+                LINUX_WL_OBJ_DATA_DEVICE_MANAGER,
+                version.min(3),
+                -1,
+            );
+        }
+        LINUX_WL_GLOBAL_SUBCOMPOSITOR => {
+            let _ = linux_wayland_alloc_object(
+                &mut state.sockets[sock_idx],
+                new_id,
+                LINUX_WL_OBJ_SUBCOMPOSITOR,
+                version.min(1),
+                -1,
+            );
+        }
+        _ => {}
+    }
+}
+
+fn linux_wayland_dispatch_compositor_request(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    opcode: u16,
+    args: &[u8],
+) {
+    if opcode == 0 {
+        let Some(surface_id) = linux_wayland_read_u32_le(args, 0) else {
+            return;
+        };
+        let _ = linux_wayland_alloc_object(
+            &mut state.sockets[sock_idx],
+            surface_id,
+            LINUX_WL_OBJ_SURFACE,
+            1,
+            -1,
+        );
+    }
+}
+
+fn linux_wayland_dispatch_shm_request(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    opcode: u16,
+    args: &[u8],
+) {
+    if opcode != 0 {
+        return;
+    }
+    let Some(pool_id) = linux_wayland_read_u32_le(args, 0) else {
+        return;
+    };
+    let Some(rights_msg) = linux_socket_rights_pop_message(state, sock_idx) else {
+        return;
+    };
+    let total = (rights_msg.fd_count as usize).min(LINUX_SOCKET_RIGHTS_PER_MSG);
+    if total == 0 {
+        return;
+    }
+    let primary_open = rights_msg.open_slot_indices[0] as usize;
+    let mut i = 1usize;
+    while i < total {
+        let extra = rights_msg.open_slot_indices[i] as usize;
+        if extra < LINUX_MAX_OPEN_FILES && state.open_files[extra].active {
+            linux_close_open_slot(state, extra);
+        }
+        i += 1;
+    }
+    if primary_open >= LINUX_MAX_OPEN_FILES || !state.open_files[primary_open].active {
+        return;
+    }
+    if !linux_wayland_alloc_object(
+        &mut state.sockets[sock_idx],
+        pool_id,
+        LINUX_WL_OBJ_SHM_POOL,
+        1,
+        primary_open as i32,
+    ) {
+        linux_close_open_slot(state, primary_open);
+    }
+}
+
+fn linux_wayland_dispatch_shm_pool_request(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    obj_idx: usize,
+    opcode: u16,
+    args: &[u8],
+) {
+    match opcode {
+        0 => {
+            let Some(buffer_id) = linux_wayland_read_u32_le(args, 0) else {
+                return;
+            };
+            let Some(offset) = linux_wayland_read_u32_le(args, 4) else {
+                return;
+            };
+            let Some(width) = linux_wayland_read_i32_le(args, 8) else {
+                return;
+            };
+            let Some(height) = linux_wayland_read_i32_le(args, 12) else {
+                return;
+            };
+            let Some(stride) = linux_wayland_read_i32_le(args, 16) else {
+                return;
+            };
+            let Some(format) = linux_wayland_read_u32_le(args, 20) else {
+                return;
+            };
+            if width <= 0 || height <= 0 || stride <= 0 {
+                return;
+            }
+
+            let pool_open = state.sockets[sock_idx].wayland_objects[obj_idx].aux_open_slot;
+            if pool_open < 0 {
+                return;
+            }
+            let Some(buffer_open_idx) = linux_hold_open_slot_reference(state, pool_open as usize) else {
+                return;
+            };
+            if linux_wayland_alloc_object(
+                &mut state.sockets[sock_idx],
+                buffer_id,
+                LINUX_WL_OBJ_BUFFER,
+                1,
+                buffer_open_idx as i32,
+            ) {
+                if let Some(buffer_obj_idx) = linux_wayland_find_object_index(&state.sockets[sock_idx], buffer_id) {
+                    state.sockets[sock_idx].wayland_objects[buffer_obj_idx].aux_i0 = offset as i32;
+                    state.sockets[sock_idx].wayland_objects[buffer_obj_idx].aux_i1 = width;
+                    state.sockets[sock_idx].wayland_objects[buffer_obj_idx].aux_i2 = height;
+                    state.sockets[sock_idx].wayland_objects[buffer_obj_idx].aux_id = stride as u32;
+                    state.sockets[sock_idx].wayland_objects[buffer_obj_idx].aux_u0 = format;
+                }
+            } else {
+                linux_close_open_slot(state, buffer_open_idx);
+            }
+        }
+        1 => {
+            linux_wayland_release_object_by_index(state, sock_idx, obj_idx, true);
+        }
+        2 => {
+            let Some(new_size_i32) = linux_wayland_read_i32_le(args, 0) else {
+                return;
+            };
+            if new_size_i32 <= 0 {
+                return;
+            }
+            let new_size = new_size_i32 as u64;
+            let pool_open = state.sockets[sock_idx].wayland_objects[obj_idx].aux_open_slot;
+            if pool_open < 0 {
+                return;
+            }
+            let pool_open_idx = pool_open as usize;
+            if pool_open_idx >= LINUX_MAX_OPEN_FILES || !state.open_files[pool_open_idx].active {
+                return;
+            }
+            if state.open_files[pool_open_idx].kind != LINUX_OPEN_KIND_RUNTIME {
+                return;
+            }
+            let runtime_idx = state.open_files[pool_open_idx].object_index;
+            if runtime_idx >= LINUX_MAX_RUNTIME_FILES || !state.runtime_files[runtime_idx].active {
+                return;
+            }
+            if state.runtime_files[runtime_idx].size >= new_size {
+                return;
+            }
+            if linux_runtime_reserve_capacity(state, runtime_idx, new_size).is_err() {
+                return;
+            }
+            state.runtime_files[runtime_idx].size = new_size;
+        }
+        _ => {}
+    }
+}
+
+fn linux_wayland_dispatch_surface_request(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    obj_idx: usize,
+    opcode: u16,
+    args: &[u8],
+) {
+    match opcode {
+        0 => {
+            linux_wayland_release_object_by_index(state, sock_idx, obj_idx, true);
+        }
+        1 => {
+            let Some(buffer_id) = linux_wayland_read_u32_le(args, 0) else {
+                return;
+            };
+            state.sockets[sock_idx].wayland_objects[obj_idx].aux_id = buffer_id;
+        }
+        3 => {
+            let Some(callback_id) = linux_wayland_read_u32_le(args, 0) else {
+                return;
+            };
+            if !linux_wayland_alloc_object(
+                &mut state.sockets[sock_idx],
+                callback_id,
+                LINUX_WL_OBJ_CALLBACK,
+                1,
+                -1,
+            ) {
+                return;
+            }
+            let serial = linux_wayland_next_serial(state, sock_idx);
+            let mut payload = Vec::new();
+            linux_wayland_push_u32(&mut payload, serial);
+            let _ = linux_wayland_push_event(state, sock_idx, callback_id, 0, payload.as_slice());
+        }
+        6 => {
+            linux_wayland_surface_commit(state, sock_idx, obj_idx);
+        }
+        _ => {}
+    }
+}
+
+fn linux_wayland_dispatch_xdg_wm_base_request(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    obj_idx: usize,
+    opcode: u16,
+    args: &[u8],
+) {
+    match opcode {
+        0 => {
+            linux_wayland_release_object_by_index(state, sock_idx, obj_idx, true);
+        }
+        1 => {
+            let Some(positioner_id) = linux_wayland_read_u32_le(args, 0) else {
+                return;
+            };
+            let _ = linux_wayland_alloc_object(
+                &mut state.sockets[sock_idx],
+                positioner_id,
+                LINUX_WL_OBJ_XDG_POSITIONER,
+                1,
+                -1,
+            );
+        }
+        2 => {
+            let Some(xdg_surface_id) = linux_wayland_read_u32_le(args, 0) else {
+                return;
+            };
+            let Some(surface_id) = linux_wayland_read_u32_le(args, 4) else {
+                return;
+            };
+            let Some(surface_idx) = linux_wayland_find_object_index(&state.sockets[sock_idx], surface_id) else {
+                return;
+            };
+            if state.sockets[sock_idx].wayland_objects[surface_idx].kind != LINUX_WL_OBJ_SURFACE {
+                return;
+            }
+            if linux_wayland_alloc_object(
+                &mut state.sockets[sock_idx],
+                xdg_surface_id,
+                LINUX_WL_OBJ_XDG_SURFACE,
+                1,
+                -1,
+            ) {
+                if let Some(new_idx) = linux_wayland_find_object_index(&state.sockets[sock_idx], xdg_surface_id) {
+                    state.sockets[sock_idx].wayland_objects[new_idx].aux_id = surface_id;
+                }
+            }
+        }
+        3 => {
+            // pong(serial): no-op in this subset.
+        }
+        _ => {}
+    }
+}
+
+fn linux_wayland_dispatch_xdg_positioner_request(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    obj_idx: usize,
+    opcode: u16,
+    _args: &[u8],
+) {
+    if opcode == 0 {
+        linux_wayland_release_object_by_index(state, sock_idx, obj_idx, true);
+    }
+}
+
+fn linux_wayland_dispatch_xdg_surface_request(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    obj_idx: usize,
+    opcode: u16,
+    args: &[u8],
+) {
+    let xdg_surface_id = state.sockets[sock_idx].wayland_objects[obj_idx].id;
+    match opcode {
+        0 => {
+            let mut i = 0usize;
+            while i < LINUX_WAYLAND_MAX_OBJECTS {
+                let obj = state.sockets[sock_idx].wayland_objects[i];
+                if obj.active && obj.kind == LINUX_WL_OBJ_XDG_TOPLEVEL && obj.aux_id == xdg_surface_id {
+                    linux_wayland_release_object_by_index(state, sock_idx, i, true);
+                }
+                i += 1;
+            }
+            linux_wayland_release_object_by_index(state, sock_idx, obj_idx, true);
+        }
+        1 => {
+            let Some(toplevel_id) = linux_wayland_read_u32_le(args, 0) else {
+                return;
+            };
+            if linux_wayland_alloc_object(
+                &mut state.sockets[sock_idx],
+                toplevel_id,
+                LINUX_WL_OBJ_XDG_TOPLEVEL,
+                1,
+                -1,
+            ) {
+                if let Some(toplevel_idx) = linux_wayland_find_object_index(&state.sockets[sock_idx], toplevel_id) {
+                    state.sockets[sock_idx].wayland_objects[toplevel_idx].aux_id = xdg_surface_id;
+                    state.sockets[sock_idx].wayland_objects[toplevel_idx].aux_i1 = LINUX_GFX_MAX_WIDTH as i32;
+                    state.sockets[sock_idx].wayland_objects[toplevel_idx].aux_i2 = LINUX_GFX_MAX_HEIGHT as i32;
+                }
+                linux_wayland_send_xdg_surface_configure(state, sock_idx, obj_idx);
+            }
+        }
+        3 => {
+            // set_window_geometry: accepted as no-op subset.
+        }
+        4 => {
+            let Some(serial) = linux_wayland_read_u32_le(args, 0) else {
+                return;
+            };
+            state.sockets[sock_idx].wayland_objects[obj_idx].aux_i0 = serial as i32;
+        }
+        _ => {}
+    }
+}
+
+fn linux_wayland_dispatch_xdg_toplevel_request(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    obj_idx: usize,
+    opcode: u16,
+    args: &[u8],
+) {
+    match opcode {
+        0 => {
+            linux_wayland_release_object_by_index(state, sock_idx, obj_idx, true);
+        }
+        2 => {
+            if let Some((title, _next)) = linux_wayland_read_string_arg(args, 0) {
+                if !title.is_empty() {
+                    let title_text = String::from_utf8_lossy(title);
+                    let mut status = String::from("Wayland xdg_toplevel: ");
+                    status.push_str(title_text.as_ref());
+                    linux_gfx_bridge_set_status(status.as_str());
+                }
+            }
+        }
+        7 => {
+            let Some(max_w) = linux_wayland_read_i32_le(args, 0) else {
+                return;
+            };
+            let Some(max_h) = linux_wayland_read_i32_le(args, 4) else {
+                return;
+            };
+            if max_w > 0 {
+                state.sockets[sock_idx].wayland_objects[obj_idx].aux_i1 =
+                    max_w.min(LINUX_GFX_MAX_WIDTH as i32);
+            }
+            if max_h > 0 {
+                state.sockets[sock_idx].wayland_objects[obj_idx].aux_i2 =
+                    max_h.min(LINUX_GFX_MAX_HEIGHT as i32);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn linux_wayland_dispatch_seat_request(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    obj_idx: usize,
+    opcode: u16,
+    args: &[u8],
+) {
+    let seat_version = state.sockets[sock_idx].wayland_objects[obj_idx].version.max(1);
+    match opcode {
+        0 => {
+            let Some(pointer_id) = linux_wayland_read_u32_le(args, 0) else {
+                return;
+            };
+            let _ = linux_wayland_alloc_object(
+                &mut state.sockets[sock_idx],
+                pointer_id,
+                LINUX_WL_OBJ_POINTER,
+                seat_version.min(7),
+                -1,
+            );
+        }
+        1 => {
+            let Some(keyboard_id) = linux_wayland_read_u32_le(args, 0) else {
+                return;
+            };
+            let keyboard_version = seat_version.min(7);
+            if !linux_wayland_alloc_object(
+                &mut state.sockets[sock_idx],
+                keyboard_id,
+                LINUX_WL_OBJ_KEYBOARD,
+                keyboard_version,
+                -1,
+            ) {
+                return;
+            }
+            let Some(keyboard_idx) = linux_wayland_find_object_index(&state.sockets[sock_idx], keyboard_id) else {
+                return;
+            };
+
+            let mut sent_keymap = false;
+            if let Some(keymap_open_idx) =
+                linux_wayland_create_runtime_blob_open_slot(state, b"wl-keymap", LINUX_WL_KEYMAP_TEXT)
+            {
+                let mut payload = Vec::new();
+                linux_wayland_push_u32(&mut payload, LINUX_WL_KEYMAP_FORMAT_XKB_V1);
+                linux_wayland_push_u32(&mut payload, LINUX_WL_KEYMAP_TEXT.len() as u32);
+                sent_keymap = linux_wayland_push_event_with_fd(
+                    state,
+                    sock_idx,
+                    keyboard_id,
+                    0,
+                    payload.as_slice(),
+                    keymap_open_idx,
+                );
+            }
+            if !sent_keymap {
+                let mut payload = Vec::new();
+                linux_wayland_push_u32(&mut payload, LINUX_WL_KEYMAP_FORMAT_NO_KEYMAP);
+                linux_wayland_push_u32(&mut payload, 0);
+                let _ = linux_wayland_push_event(state, sock_idx, keyboard_id, 0, payload.as_slice());
+            }
+            state.sockets[sock_idx].wayland_objects[keyboard_idx].aux_u0 = if sent_keymap { 1 } else { 0 };
+
+            if keyboard_version >= 4 {
+                let mut payload = Vec::new();
+                linux_wayland_push_i32(&mut payload, LINUX_WL_KEY_REPEAT_RATE);
+                linux_wayland_push_i32(&mut payload, LINUX_WL_KEY_REPEAT_DELAY_MS);
+                let _ = linux_wayland_push_event(state, sock_idx, keyboard_id, 5, payload.as_slice());
+            }
+        }
+        2 => {
+            let Some(touch_id) = linux_wayland_read_u32_le(args, 0) else {
+                return;
+            };
+            let _ = linux_wayland_alloc_object(
+                &mut state.sockets[sock_idx],
+                touch_id,
+                LINUX_WL_OBJ_TOUCH,
+                seat_version.min(7),
+                -1,
+            );
+        }
+        3 => {
+            linux_wayland_release_object_by_index(state, sock_idx, obj_idx, true);
+        }
+        _ => {}
+    }
+}
+
+fn linux_wayland_dispatch_output_request(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    obj_idx: usize,
+    opcode: u16,
+) {
+    if opcode == 0 {
+        linux_wayland_release_object_by_index(state, sock_idx, obj_idx, true);
+    }
+}
+
+fn linux_wayland_dispatch_pointer_request(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    obj_idx: usize,
+    opcode: u16,
+) {
+    if opcode == 1 {
+        linux_wayland_release_object_by_index(state, sock_idx, obj_idx, true);
+    }
+}
+
+fn linux_wayland_dispatch_keyboard_request(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    obj_idx: usize,
+    opcode: u16,
+) {
+    if opcode == 0 {
+        linux_wayland_release_object_by_index(state, sock_idx, obj_idx, true);
+    }
+}
+
+fn linux_wayland_dispatch_touch_request(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    obj_idx: usize,
+    opcode: u16,
+) {
+    if opcode == 0 {
+        linux_wayland_release_object_by_index(state, sock_idx, obj_idx, true);
+    }
+}
+
+fn linux_wayland_dispatch_data_device_manager_request(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    _obj_idx: usize,
+    opcode: u16,
+    args: &[u8],
+) {
+    match opcode {
+        0 => {
+            let Some(source_id) = linux_wayland_read_u32_le(args, 0) else {
+                return;
+            };
+            let _ = linux_wayland_alloc_object(
+                &mut state.sockets[sock_idx],
+                source_id,
+                LINUX_WL_OBJ_DATA_SOURCE,
+                1,
+                -1,
+            );
+        }
+        1 => {
+            let Some(device_id) = linux_wayland_read_u32_le(args, 0) else {
+                return;
+            };
+            let Some(seat_id) = linux_wayland_read_u32_le(args, 4) else {
+                return;
+            };
+            let Some(seat_idx) = linux_wayland_find_object_index(&state.sockets[sock_idx], seat_id) else {
+                return;
+            };
+            if state.sockets[sock_idx].wayland_objects[seat_idx].kind != LINUX_WL_OBJ_SEAT {
+                return;
+            }
+            if linux_wayland_alloc_object(
+                &mut state.sockets[sock_idx],
+                device_id,
+                LINUX_WL_OBJ_DATA_DEVICE,
+                1,
+                -1,
+            ) {
+                if let Some(new_idx) = linux_wayland_find_object_index(&state.sockets[sock_idx], device_id) {
+                    state.sockets[sock_idx].wayland_objects[new_idx].aux_id = seat_id;
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn linux_wayland_dispatch_data_source_request(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    obj_idx: usize,
+    opcode: u16,
+) {
+    if opcode == 1 {
+        linux_wayland_release_object_by_index(state, sock_idx, obj_idx, true);
+    }
+}
+
+fn linux_wayland_dispatch_data_device_request(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    obj_idx: usize,
+    opcode: u16,
+) {
+    if opcode == 2 {
+        linux_wayland_release_object_by_index(state, sock_idx, obj_idx, true);
+    }
+}
+
+fn linux_wayland_dispatch_subcompositor_request(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    obj_idx: usize,
+    opcode: u16,
+    args: &[u8],
+) {
+    match opcode {
+        0 => {
+            linux_wayland_release_object_by_index(state, sock_idx, obj_idx, true);
+        }
+        1 => {
+            let Some(subsurface_id) = linux_wayland_read_u32_le(args, 0) else {
+                return;
+            };
+            let Some(surface_id) = linux_wayland_read_u32_le(args, 4) else {
+                return;
+            };
+            let Some(parent_id) = linux_wayland_read_u32_le(args, 8) else {
+                return;
+            };
+            let Some(surface_idx) = linux_wayland_find_object_index(&state.sockets[sock_idx], surface_id) else {
+                return;
+            };
+            let Some(parent_idx) = linux_wayland_find_object_index(&state.sockets[sock_idx], parent_id) else {
+                return;
+            };
+            if state.sockets[sock_idx].wayland_objects[surface_idx].kind != LINUX_WL_OBJ_SURFACE
+                || state.sockets[sock_idx].wayland_objects[parent_idx].kind != LINUX_WL_OBJ_SURFACE
+            {
+                return;
+            }
+            if linux_wayland_alloc_object(
+                &mut state.sockets[sock_idx],
+                subsurface_id,
+                LINUX_WL_OBJ_SUBSURFACE,
+                1,
+                -1,
+            ) {
+                if let Some(new_idx) =
+                    linux_wayland_find_object_index(&state.sockets[sock_idx], subsurface_id)
+                {
+                    state.sockets[sock_idx].wayland_objects[new_idx].aux_id = surface_id;
+                    state.sockets[sock_idx].wayland_objects[new_idx].aux_u0 = parent_id;
+                }
+            }
+        }
+        _ => {}
+    }
+}
+
+fn linux_wayland_dispatch_subsurface_request(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    obj_idx: usize,
+    opcode: u16,
+    args: &[u8],
+) {
+    match opcode {
+        0 => {
+            linux_wayland_release_object_by_index(state, sock_idx, obj_idx, true);
+        }
+        1 => {
+            let Some(x) = linux_wayland_read_i32_le(args, 0) else {
+                return;
+            };
+            let Some(y) = linux_wayland_read_i32_le(args, 4) else {
+                return;
+            };
+            state.sockets[sock_idx].wayland_objects[obj_idx].aux_i1 = x;
+            state.sockets[sock_idx].wayland_objects[obj_idx].aux_i2 = y;
+        }
+        _ => {}
+    }
+}
+
+fn linux_wayland_dispatch_request(
+    state: &mut LinuxShimState,
+    sock_idx: usize,
+    object_id: u32,
+    opcode: u16,
+    args: &[u8],
+) {
+    if object_id == 1 {
+        linux_wayland_dispatch_display_request(state, sock_idx, opcode, args);
+        return;
+    }
+    let Some(obj_idx) = linux_wayland_find_object_index(&state.sockets[sock_idx], object_id) else {
+        return;
+    };
+    let kind = state.sockets[sock_idx].wayland_objects[obj_idx].kind;
+    match kind {
+        LINUX_WL_OBJ_REGISTRY => linux_wayland_dispatch_registry_request(state, sock_idx, opcode, args),
+        LINUX_WL_OBJ_COMPOSITOR => linux_wayland_dispatch_compositor_request(state, sock_idx, opcode, args),
+        LINUX_WL_OBJ_SHM => linux_wayland_dispatch_shm_request(state, sock_idx, opcode, args),
+        LINUX_WL_OBJ_SHM_POOL => linux_wayland_dispatch_shm_pool_request(state, sock_idx, obj_idx, opcode, args),
+        LINUX_WL_OBJ_SURFACE => linux_wayland_dispatch_surface_request(state, sock_idx, obj_idx, opcode, args),
+        LINUX_WL_OBJ_XDG_WM_BASE => {
+            linux_wayland_dispatch_xdg_wm_base_request(state, sock_idx, obj_idx, opcode, args)
+        }
+        LINUX_WL_OBJ_XDG_POSITIONER => {
+            linux_wayland_dispatch_xdg_positioner_request(state, sock_idx, obj_idx, opcode, args)
+        }
+        LINUX_WL_OBJ_XDG_SURFACE => {
+            linux_wayland_dispatch_xdg_surface_request(state, sock_idx, obj_idx, opcode, args)
+        }
+        LINUX_WL_OBJ_XDG_TOPLEVEL => {
+            linux_wayland_dispatch_xdg_toplevel_request(state, sock_idx, obj_idx, opcode, args)
+        }
+        LINUX_WL_OBJ_SEAT => linux_wayland_dispatch_seat_request(state, sock_idx, obj_idx, opcode, args),
+        LINUX_WL_OBJ_OUTPUT => linux_wayland_dispatch_output_request(state, sock_idx, obj_idx, opcode),
+        LINUX_WL_OBJ_POINTER => linux_wayland_dispatch_pointer_request(state, sock_idx, obj_idx, opcode),
+        LINUX_WL_OBJ_KEYBOARD => linux_wayland_dispatch_keyboard_request(state, sock_idx, obj_idx, opcode),
+        LINUX_WL_OBJ_TOUCH => linux_wayland_dispatch_touch_request(state, sock_idx, obj_idx, opcode),
+        LINUX_WL_OBJ_DATA_DEVICE_MANAGER => {
+            linux_wayland_dispatch_data_device_manager_request(state, sock_idx, obj_idx, opcode, args)
+        }
+        LINUX_WL_OBJ_DATA_SOURCE => linux_wayland_dispatch_data_source_request(state, sock_idx, obj_idx, opcode),
+        LINUX_WL_OBJ_DATA_DEVICE => linux_wayland_dispatch_data_device_request(state, sock_idx, obj_idx, opcode),
+        LINUX_WL_OBJ_SUBCOMPOSITOR => {
+            linux_wayland_dispatch_subcompositor_request(state, sock_idx, obj_idx, opcode, args)
+        }
+        LINUX_WL_OBJ_SUBSURFACE => {
+            linux_wayland_dispatch_subsurface_request(state, sock_idx, obj_idx, opcode, args)
+        }
+        LINUX_WL_OBJ_CALLBACK => {
+            if opcode == 0 {
+                linux_wayland_release_object_by_index(state, sock_idx, obj_idx, true);
+            }
+        }
+        LINUX_WL_OBJ_BUFFER => {
+            if opcode == 0 {
+                linux_wayland_release_object_by_index(state, sock_idx, obj_idx, true);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn linux_wayland_consume_payload(state: &mut LinuxShimState, sock_idx: usize, payload: &[u8]) {
+    if payload.is_empty() || sock_idx >= LINUX_MAX_SOCKETS || !state.sockets[sock_idx].active {
+        return;
+    }
+
+    let mut copied = 0usize;
+    while copied < payload.len() {
+        let req_len = state.sockets[sock_idx].wayland_req_len;
+        if req_len >= LINUX_WAYLAND_REQ_BUF {
+            break;
+        }
+        let free = LINUX_WAYLAND_REQ_BUF.saturating_sub(req_len);
+        let chunk = free.min(payload.len().saturating_sub(copied));
+        if chunk == 0 {
+            break;
+        }
+        unsafe {
+            ptr::copy_nonoverlapping(
+                payload.as_ptr().add(copied),
+                state.sockets[sock_idx]
+                    .wayland_req_buf
+                    .as_mut_ptr()
+                    .add(req_len),
+                chunk,
+            );
+        }
+        state.sockets[sock_idx].wayland_req_len = req_len.saturating_add(chunk);
+        copied = copied.saturating_add(chunk);
+    }
+
+    loop {
+        let req_len = state.sockets[sock_idx].wayland_req_len;
+        if req_len < 8 {
+            break;
+        }
+
+        let obj_id = u32::from_le_bytes([
+            state.sockets[sock_idx].wayland_req_buf[0],
+            state.sockets[sock_idx].wayland_req_buf[1],
+            state.sockets[sock_idx].wayland_req_buf[2],
+            state.sockets[sock_idx].wayland_req_buf[3],
+        ]);
+        let hdr = u32::from_le_bytes([
+            state.sockets[sock_idx].wayland_req_buf[4],
+            state.sockets[sock_idx].wayland_req_buf[5],
+            state.sockets[sock_idx].wayland_req_buf[6],
+            state.sockets[sock_idx].wayland_req_buf[7],
+        ]);
+        let opcode = (hdr & 0xFFFF) as u16;
+        let msg_size = (hdr >> 16) as usize;
+
+        if msg_size < 8 || msg_size > LINUX_WAYLAND_REQ_BUF {
+            state.sockets[sock_idx].wayland_req_len = 0;
+            break;
+        }
+        if req_len < msg_size {
+            break;
+        }
+
+        let mut args = Vec::new();
+        args.extend_from_slice(&state.sockets[sock_idx].wayland_req_buf[8..msg_size]);
+        linux_wayland_dispatch_request(state, sock_idx, obj_id, opcode, args.as_slice());
+
+        let remaining = req_len.saturating_sub(msg_size);
+        if remaining > 0 {
+            unsafe {
+                ptr::copy(
+                    state.sockets[sock_idx].wayland_req_buf.as_ptr().add(msg_size),
+                    state.sockets[sock_idx].wayland_req_buf.as_mut_ptr(),
+                    remaining,
+                );
+            }
+        }
+        state.sockets[sock_idx].wayland_req_len = remaining;
+    }
 }
 
 fn linux_ascii_contains_casefold(haystack: &[u8], needle: &[u8]) -> bool {
@@ -7295,6 +9750,11 @@ fn linux_close_open_slot(state: &mut LinuxShimState, open_idx: usize) {
         }
         LINUX_OPEN_KIND_SOCKET => {
             if slot.object_index < LINUX_MAX_SOCKETS && state.sockets[slot.object_index].active {
+                if state.sockets[slot.object_index].endpoint == LINUX_SOCKET_ENDPOINT_WAYLAND {
+                    linux_wayland_release_all_socket_objects(state, slot.object_index);
+                }
+                linux_wayland_event_rights_clear_queue(state, slot.object_index);
+                linux_socket_rights_clear_queue(state, slot.object_index);
                 let peer = state.sockets[slot.object_index].peer_index;
                 let pending = state.sockets[slot.object_index].pending_accept_index;
                 state.sockets[slot.object_index].connected = false;
@@ -7310,6 +9770,7 @@ fn linux_close_open_slot(state: &mut LinuxShimState, open_idx: usize) {
                 if pending >= 0 {
                     let pending_idx = pending as usize;
                     if pending_idx < LINUX_MAX_SOCKETS && state.sockets[pending_idx].active {
+                        linux_socket_rights_clear_queue(state, pending_idx);
                         let pending_peer = state.sockets[pending_idx].peer_index;
                         if pending_peer >= 0 {
                             let pending_peer_idx = pending_peer as usize;
@@ -7416,6 +9877,7 @@ fn linux_add_process_slot(
     pid: u32,
     parent_pid: u32,
     leader_tid: u32,
+    cr3: Option<u64>,
     brk_base: u64,
     brk_current: u64,
     brk_limit: u64,
@@ -7430,6 +9892,7 @@ fn linux_add_process_slot(
                 pid,
                 parent_pid,
                 leader_tid,
+                cr3,
                 brk_base,
                 brk_current,
                 brk_limit,
@@ -8895,6 +11358,51 @@ fn linux_path_is_virtual_x11_socket(path: &[u8], path_len: usize) -> bool {
         || linux_path_contains_ascii_casefold(path, path_len, b"x11-unix/")
 }
 
+fn linux_path_matches_run_user_wayland(path: &[u8], path_len: usize) -> bool {
+    let prefix = b"/run/user/";
+    let suffix = b"/wayland-0";
+    if path_len <= prefix.len() + suffix.len() {
+        return false;
+    }
+    let mut i = 0usize;
+    while i < prefix.len() {
+        if path[i].to_ascii_lowercase() != prefix[i] {
+            return false;
+        }
+        i += 1;
+    }
+    if i >= path_len || !path[i].is_ascii_digit() {
+        return false;
+    }
+    while i < path_len && path[i].is_ascii_digit() {
+        i += 1;
+    }
+    if i + suffix.len() != path_len {
+        return false;
+    }
+    let mut j = 0usize;
+    while j < suffix.len() {
+        if path[i + j].to_ascii_lowercase() != suffix[j] {
+            return false;
+        }
+        j += 1;
+    }
+    true
+}
+
+fn linux_path_is_virtual_wayland_socket(path: &[u8], path_len: usize) -> bool {
+    linux_path_equals_ascii_casefold(path, path_len, "/run/wayland-0")
+        || linux_path_matches_run_user_wayland(path, path_len)
+        || linux_path_equals_ascii_casefold(path, path_len, "/tmp/wayland-0")
+}
+
+fn linux_path_is_virtual_wayland_dir(path: &[u8], path_len: usize) -> bool {
+    linux_path_equals_ascii_casefold(path, path_len, "/run")
+        || linux_path_equals_ascii_casefold(path, path_len, "/run/user")
+        || linux_path_matches_run_user_dir(path, path_len)
+        || linux_path_equals_ascii_casefold(path, path_len, "/tmp")
+}
+
 fn linux_path_matches_run_user_bus(path: &[u8], path_len: usize) -> bool {
     let prefix = b"/run/user/";
     if path_len <= prefix.len() + 4 {
@@ -9037,6 +11545,7 @@ fn linux_virtual_path_mode(path: &[u8], path_len: usize) -> Option<u32> {
         || linux_path_equals(path, path_len, "/proc")
         || linux_path_equals(path, path_len, "/proc/self")
         || linux_path_is_virtual_x11_dir(path, path_len)
+        || linux_path_is_virtual_wayland_dir(path, path_len)
         || linux_path_is_virtual_dbus_dir(path, path_len)
     {
         return Some(LINUX_STAT_MODE_DIR);
@@ -9044,7 +11553,10 @@ fn linux_virtual_path_mode(path: &[u8], path_len: usize) -> Option<u32> {
     if linux_path_equals(path, path_len, "/proc/self/exe") || linux_path_equals(path, path_len, "/proc/self/cwd") {
         return Some(LINUX_STAT_MODE_REG);
     }
-    if linux_path_is_virtual_x11_socket(path, path_len) || linux_path_is_virtual_dbus_socket(path, path_len) {
+    if linux_path_is_virtual_x11_socket(path, path_len)
+        || linux_path_is_virtual_wayland_socket(path, path_len)
+        || linux_path_is_virtual_dbus_socket(path, path_len)
+    {
         return Some(LINUX_STAT_MODE_SOCK);
     }
     None
@@ -9216,6 +11728,34 @@ fn linux_sys_write(state: &mut LinuxShimState, fd: u64, buf: u64, len: u64) -> i
                     state.runtime_files[runtime_idx].size = end;
                 }
                 return write_len as i64;
+            }
+            LINUX_OPEN_KIND_FAT32 => {
+                let cluster = slot.object_index as u32;
+                if cluster < 2 {
+                    return linux_neg_errno(9); // Invalid
+                }
+                let cursor = slot.cursor;
+                let to_write = len.min(i64::MAX as u64) as usize;
+                if to_write == 0 {
+                    return 0;
+                }
+                
+                let mut write_buf = crate::alloc::vec::Vec::with_capacity(to_write);
+                write_buf.resize(to_write, 0);
+                unsafe {
+                    ptr::copy_nonoverlapping(buf as *const u8, write_buf.as_mut_ptr(), to_write);
+                }
+                
+                // Currently, fat32 has write_text_file_in_dir but not a direct write_file_range.
+                // We will add write_file_range next, but for now we will just assume it exists.
+                unsafe {
+                    let fat = &mut crate::fat32::GLOBAL_FAT;
+                    let written_len = fat.write_file_range(cluster, cursor as usize, &write_buf).unwrap_or(0);
+                    if written_len > 0 {
+                        state.open_files[open_idx].cursor = cursor.saturating_add(written_len as u64);
+                    }
+                    return written_len as i64;
+                }
             }
             LINUX_OPEN_KIND_STDIO_DUP => {
                 let target = slot.aux as i32;
@@ -9872,16 +12412,19 @@ fn linux_sys_getdents64(state: &mut LinuxShimState, fd: u64, dirp: u64, count: u
         push_entry("cwd", LINUX_DT_DIR);
     } else if linux_path_equals(&dir_path, dir_path_len, "/tmp") {
         push_entry(".x11-unix", LINUX_DT_DIR);
+        push_entry("wayland-0", LINUX_DT_SOCK);
     } else if linux_path_equals(&dir_path, dir_path_len, "/tmp/.x11-unix") {
         push_entry("x0", LINUX_DT_SOCK);
         push_entry("x1", LINUX_DT_SOCK);
     } else if linux_path_equals_ascii_casefold(&dir_path, dir_path_len, "/run") {
         push_entry("user", LINUX_DT_DIR);
         push_entry("dbus", LINUX_DT_DIR);
+        push_entry("wayland-0", LINUX_DT_SOCK);
     } else if linux_path_equals_ascii_casefold(&dir_path, dir_path_len, "/run/user") {
         push_entry("0", LINUX_DT_DIR);
     } else if linux_path_matches_run_user_dir(&dir_path, dir_path_len) {
         push_entry("bus", LINUX_DT_SOCK);
+        push_entry("wayland-0", LINUX_DT_SOCK);
     } else if linux_path_equals_ascii_casefold(&dir_path, dir_path_len, "/run/dbus") {
         push_entry("system_bus_socket", LINUX_DT_SOCK);
     } else if linux_path_equals_ascii_casefold(&dir_path, dir_path_len, "/var") {
@@ -10301,6 +12844,26 @@ fn linux_socket_send_payload(state: &mut LinuxShimState, sock_idx: usize, buf: u
         return sent as i64;
     }
 
+    if state.sockets[sock_idx].endpoint == LINUX_SOCKET_ENDPOINT_WAYLAND {
+        let mut chunk = [0u8; 4096];
+        let mut sent = 0u64;
+        let mut remaining = len.min(i64::MAX as u64);
+        while remaining > 0 {
+            let copy_len = remaining.min(chunk.len() as u64) as usize;
+            unsafe {
+                ptr::copy_nonoverlapping(
+                    buf.saturating_add(sent) as *const u8,
+                    chunk.as_mut_ptr(),
+                    copy_len,
+                );
+            }
+            linux_wayland_consume_payload(state, sock_idx, &chunk[..copy_len]);
+            sent = sent.saturating_add(copy_len as u64);
+            remaining = remaining.saturating_sub(copy_len as u64);
+        }
+        return sent as i64;
+    }
+
     if state.sockets[sock_idx].endpoint == LINUX_SOCKET_ENDPOINT_PAIR {
         let peer_idx_i = state.sockets[sock_idx].peer_index;
         if peer_idx_i < 0 {
@@ -10352,6 +12915,9 @@ fn linux_socket_recv_payload(state: &mut LinuxShimState, sock_idx: usize, buf: u
         && state.sockets[sock_idx].x11_state == LINUX_X11_STATE_READY
     {
         linux_x11_pump_bridge_events(state, sock_idx);
+    }
+    if state.sockets[sock_idx].endpoint == LINUX_SOCKET_ENDPOINT_WAYLAND {
+        linux_wayland_pump_input_events(state, sock_idx);
     }
 
     let available = linux_socket_rx_available(&state.sockets[sock_idx]);
@@ -10428,10 +12994,19 @@ fn linux_sys_socket(state: &mut LinuxShimState, domain: u64, sock_type_raw: u64,
         rights_head: 0,
         rights_tail: 0,
         rights_count: 0,
-        _pad2: [0; 5],
+        wayland_event_rights_head: 0,
+        wayland_event_rights_tail: 0,
+        wayland_event_rights_count: 0,
+        _pad2: [0; 2],
+        wayland_req_len: 0,
+        wayland_serial: 1,
+        _pad3: [0; 4],
         path: [0; LINUX_PATH_MAX],
         rx_buf: [0; LINUX_SOCKET_RX_BUF],
+        wayland_req_buf: [0; LINUX_WAYLAND_REQ_BUF],
         rights_msgs: [LinuxSocketRightsMsg::empty(); LINUX_SOCKET_RIGHTS_QUEUE],
+        wayland_event_rights_msgs: [LinuxSocketRightsMsg::empty(); LINUX_SOCKET_RIGHTS_QUEUE],
+        wayland_objects: [LinuxWaylandObjectSlot::empty(); LINUX_WAYLAND_MAX_OBJECTS],
     };
     state.open_files[open_idx] = LinuxOpenFileSlot {
         active: true,
@@ -10512,10 +13087,19 @@ fn linux_sys_socketpair(
         rights_head: 0,
         rights_tail: 0,
         rights_count: 0,
-        _pad2: [0; 5],
+        wayland_event_rights_head: 0,
+        wayland_event_rights_tail: 0,
+        wayland_event_rights_count: 0,
+        _pad2: [0; 2],
+        wayland_req_len: 0,
+        wayland_serial: 1,
+        _pad3: [0; 4],
         path: [0; LINUX_PATH_MAX],
         rx_buf: [0; LINUX_SOCKET_RX_BUF],
+        wayland_req_buf: [0; LINUX_WAYLAND_REQ_BUF],
         rights_msgs: [LinuxSocketRightsMsg::empty(); LINUX_SOCKET_RIGHTS_QUEUE],
+        wayland_event_rights_msgs: [LinuxSocketRightsMsg::empty(); LINUX_SOCKET_RIGHTS_QUEUE],
+        wayland_objects: [LinuxWaylandObjectSlot::empty(); LINUX_WAYLAND_MAX_OBJECTS],
     };
     state.sockets[sock_a] = base;
     state.sockets[sock_b] = base;
@@ -10594,22 +13178,12 @@ fn linux_sys_connect(state: &mut LinuxShimState, fd: u64, addr_ptr: u64, addr_le
         state.last_unix_connect_errno = 0;
 
         let is_x11 = linux_path_is_virtual_x11_socket(&norm_path, path_len);
+        let is_wayland = linux_path_is_virtual_wayland_socket(&norm_path, path_len);
 
-        if is_x11 {
-            state.sockets[sock_idx].path = norm_path;
-            state.sockets[sock_idx].path_len = path_len as u16;
-            state.sockets[sock_idx].connected = true;
-            state.sockets[sock_idx].x11_state = LINUX_X11_STATE_HANDSHAKE;
-            state.sockets[sock_idx].x11_seq = 0;
-            state.sockets[sock_idx].x11_byte_order = b'l';
-            state.sockets[sock_idx].x11_bigreq = false;
-            state.sockets[sock_idx].endpoint = LINUX_SOCKET_ENDPOINT_X11;
-            state.sockets[sock_idx].peer_index = -1;
-            state.sockets[sock_idx].last_error = 0;
-            linux_x11_ensure_root_window(state);
-            linux_gfx_bridge_open(LINUX_GFX_MAX_WIDTH as u32, LINUX_GFX_MAX_HEIGHT as u32);
-            linux_gfx_bridge_set_status("X11 subset: cliente conectado.");
-            return 0;
+        if is_x11 || is_wayland {
+            state.last_unix_connect_len = 0;
+            state.last_unix_connect_errno = 111;
+            return linux_neg_errno(111); // ECONNREFUSED
         }
 
         let Some(listener_idx) = linux_find_unix_bound_socket_by_path(state, &norm_path, path_len) else {
@@ -10928,8 +13502,43 @@ fn linux_sys_sendmsg(state: &mut LinuxShimState, fd: u64, msg_ptr: u64, _flags: 
         Ok(v) => v,
         Err(err) => return err,
     };
+    let endpoint = state.sockets[sock_idx].endpoint;
+
+    let mut held_rights = [0usize; LINUX_SOCKET_RIGHTS_PER_MSG];
+    let held_count = match linux_sendmsg_collect_scm_rights(state, &msg, &mut held_rights) {
+        Ok(v) => v,
+        Err(err) => return err,
+    };
+    let mut rights_target_idx: Option<usize> = None;
+    let mut wayland_rights_queued = false;
+
+    if held_count > 0 {
+        if endpoint == LINUX_SOCKET_ENDPOINT_PAIR {
+            let peer_idx = match linux_socket_peer_for_rights(state, sock_idx) {
+                Ok(v) => v,
+                Err(err) => {
+                    linux_socket_rights_release_open_slots(state, &held_rights, held_count);
+                    return err;
+                }
+            };
+            if !linux_socket_rights_queue_has_space(&state.sockets[peer_idx]) {
+                linux_socket_rights_release_open_slots(state, &held_rights, held_count);
+                return linux_neg_errno(11); // EAGAIN
+            }
+            rights_target_idx = Some(peer_idx);
+        } else if endpoint == LINUX_SOCKET_ENDPOINT_WAYLAND {
+            if !linux_socket_rights_queue_has_space(&state.sockets[sock_idx]) {
+                linux_socket_rights_release_open_slots(state, &held_rights, held_count);
+                return linux_neg_errno(11); // EAGAIN
+            }
+        } else {
+            linux_socket_rights_release_open_slots(state, &held_rights, held_count);
+            return linux_neg_errno(95); // EOPNOTSUPP
+        }
+    }
+
     let count = (msg.msg_iovlen as usize).min(1024);
-    if state.sockets[sock_idx].endpoint == LINUX_SOCKET_ENDPOINT_X11 {
+    let total_sent = if endpoint == LINUX_SOCKET_ENDPOINT_X11 {
         let mut chunk = [0u8; 4096];
         let mut total = 0u64;
         let mut i = 0usize;
@@ -10938,10 +13547,13 @@ fn linux_sys_sendmsg(state: &mut LinuxShimState, fd: u64, msg_ptr: u64, _flags: 
             while i < count {
                 let iov = ptr::read(iov_ptr.add(i));
                 if iov.len > 0 && iov.base == 0 {
-                    if total > 0 {
-                        return total.min(i64::MAX as u64) as i64;
+                    if held_count > 0 {
+                        linux_socket_rights_release_open_slots(state, &held_rights, held_count);
                     }
-                    return linux_neg_errno(14); // EFAULT
+                    if total == 0 {
+                        return linux_neg_errno(14); // EFAULT
+                    }
+                    break;
                 }
                 let mut off = 0u64;
                 while off < iov.len {
@@ -10961,48 +13573,120 @@ fn linux_sys_sendmsg(state: &mut LinuxShimState, fd: u64, msg_ptr: u64, _flags: 
                 i += 1;
             }
         }
-        return total.min(i64::MAX as u64) as i64;
-    }
-    let mut total = 0u64;
-    let mut i = 0usize;
-    unsafe {
-        let iov_ptr = msg.msg_iov as *const LinuxIovec;
-        while i < count {
-            let iov = ptr::read(iov_ptr.add(i));
-            let res = linux_sys_sendto(
-                state,
-                fd,
-                iov.base,
-                iov.len,
-                0,
-                msg.msg_name,
-                msg.msg_namelen as u64,
-            );
-            if res < 0 {
-                if total > 0 {
-                    return total.min(i64::MAX as u64) as i64;
+        total.min(i64::MAX as u64) as i64
+    } else {
+        let mut total = 0u64;
+        let mut i = 0usize;
+        unsafe {
+            let iov_ptr = msg.msg_iov as *const LinuxIovec;
+            while i < count {
+                let iov = ptr::read(iov_ptr.add(i));
+                if endpoint == LINUX_SOCKET_ENDPOINT_WAYLAND
+                    && held_count > 0
+                    && !wayland_rights_queued
+                    && iov.len > 0
+                {
+                    if iov.base == 0 {
+                        linux_socket_rights_release_open_slots(state, &held_rights, held_count);
+                        if total == 0 {
+                            return linux_neg_errno(14); // EFAULT
+                        }
+                        break;
+                    }
+                    let mut rights_msg = LinuxSocketRightsMsg::empty();
+                    rights_msg.active = true;
+                    rights_msg.fd_count = held_count as u8;
+                    let mut r = 0usize;
+                    while r < held_count {
+                        rights_msg.open_slot_indices[r] = held_rights[r] as u16;
+                        r += 1;
+                    }
+                    if !linux_socket_rights_push_message(state, sock_idx, rights_msg) {
+                        linux_socket_rights_release_open_slots(state, &held_rights, held_count);
+                        if total == 0 {
+                            return linux_neg_errno(11); // EAGAIN
+                        }
+                        break;
+                    }
+                    wayland_rights_queued = true;
                 }
-                return res;
+                let res = linux_sys_sendto(
+                    state,
+                    fd,
+                    iov.base,
+                    iov.len,
+                    0,
+                    msg.msg_name,
+                    msg.msg_namelen as u64,
+                );
+                if res < 0 {
+                    if total == 0 {
+                        if held_count > 0 {
+                            if endpoint != LINUX_SOCKET_ENDPOINT_WAYLAND || !wayland_rights_queued {
+                                linux_socket_rights_release_open_slots(state, &held_rights, held_count);
+                            }
+                        }
+                        return res;
+                    }
+                    break;
+                }
+                let sent = res as u64;
+                total = total.saturating_add(sent);
+                if sent < iov.len {
+                    break;
+                }
+                i += 1;
             }
-            let sent = res as u64;
-            total = total.saturating_add(sent);
-            if sent < iov.len {
-                break;
+        }
+        total.min(i64::MAX as u64) as i64
+    };
+
+    if held_count > 0 {
+        if endpoint == LINUX_SOCKET_ENDPOINT_WAYLAND {
+            if !wayland_rights_queued {
+                linux_socket_rights_release_open_slots(state, &held_rights, held_count);
             }
-            i += 1;
+        } else if total_sent > 0 {
+            let Some(target_idx) = rights_target_idx else {
+                linux_socket_rights_release_open_slots(state, &held_rights, held_count);
+                return linux_neg_errno(95); // EOPNOTSUPP
+            };
+            let mut rights_msg = LinuxSocketRightsMsg::empty();
+            rights_msg.active = true;
+            rights_msg.fd_count = held_count as u8;
+            let mut i = 0usize;
+            while i < held_count {
+                rights_msg.open_slot_indices[i] = held_rights[i] as u16;
+                i += 1;
+            }
+            if !linux_socket_rights_push_message(state, target_idx, rights_msg) {
+                linux_socket_rights_release_open_slots(state, &held_rights, held_count);
+            }
+        } else {
+            linux_socket_rights_release_open_slots(state, &held_rights, held_count);
         }
     }
-    total.min(i64::MAX as u64) as i64
+
+    total_sent
 }
 
-fn linux_sys_recvmsg(state: &mut LinuxShimState, fd: u64, msg_ptr: u64, _flags: u64) -> i64 {
+fn linux_sys_recvmsg(state: &mut LinuxShimState, fd: u64, msg_ptr: u64, flags: u64) -> i64 {
     if msg_ptr == 0 {
         return linux_neg_errno(14);
     }
-    let msg = unsafe { ptr::read(msg_ptr as *const LinuxMsgHdr) };
+    let mut msg = unsafe { ptr::read(msg_ptr as *const LinuxMsgHdr) };
     if msg.msg_iov == 0 || msg.msg_iovlen == 0 {
         return 0;
     }
+    msg.msg_flags = 0;
+
+    let fd_i = fd as i64;
+    let sock_idx = match linux_lookup_socket_index(state, fd_i as i32) {
+        Ok(v) => v,
+        Err(err) => return err,
+    };
+    let endpoint = state.sockets[sock_idx].endpoint;
+
     let count = (msg.msg_iovlen as usize).min(1024);
     let mut total = 0u64;
     let mut i = 0usize;
@@ -11012,10 +13696,10 @@ fn linux_sys_recvmsg(state: &mut LinuxShimState, fd: u64, msg_ptr: u64, _flags: 
             let iov = ptr::read(iov_ptr.add(i));
             let res = linux_sys_recvfrom(state, fd, iov.base, iov.len, 0, 0, 0);
             if res < 0 {
-                if total > 0 {
-                    return total.min(i64::MAX as u64) as i64;
+                if total == 0 {
+                    return res;
                 }
-                return res;
+                break;
             }
             let got = res as u64;
             total = total.saturating_add(got);
@@ -11025,6 +13709,23 @@ fn linux_sys_recvmsg(state: &mut LinuxShimState, fd: u64, msg_ptr: u64, _flags: 
             i += 1;
         }
     }
+
+    if total > 0 {
+        if endpoint == LINUX_SOCKET_ENDPOINT_PAIR {
+            linux_recvmsg_attach_scm_rights(state, sock_idx, &mut msg, flags);
+        } else if endpoint == LINUX_SOCKET_ENDPOINT_WAYLAND {
+            linux_recvmsg_attach_wayland_event_fds(state, sock_idx, &mut msg, flags);
+        } else {
+            msg.msg_controllen = 0;
+        }
+    } else {
+        msg.msg_controllen = 0;
+    }
+
+    unsafe {
+        ptr::write(msg_ptr as *mut LinuxMsgHdr, msg);
+    }
+
     total.min(i64::MAX as u64) as i64
 }
 
@@ -11892,23 +14593,39 @@ fn linux_sys_openat(
     let wants_excl = (flags & LINUX_O_EXCL) != 0;
     let wants_dir = (flags & LINUX_O_DIRECTORY) != 0;
     let cloexec = (flags & LINUX_O_CLOEXEC) != 0;
-    let (exists, is_file, runtime_idx_opt, mode_bits, _file_size) =
+    let (exists, mut is_file, runtime_idx_opt, mode_bits, _file_size) =
         linux_vfs_lookup_path(state, &normalized, path_len);
     if !exists {
-        let result = if wants_create {
-            linux_neg_errno(30) // EROFS (rootfs read-only)
+        if !wants_create {
+            let result = linux_neg_errno(2); // ENOENT
+            linux_record_last_path_lookup(
+                state,
+                LINUX_SYS_OPENAT,
+                &normalized,
+                path_len,
+                result,
+                false,
+            );
+            return result;
         } else {
-            linux_neg_errno(2) // ENOENT
-        };
-        linux_record_last_path_lookup(
-            state,
-            LINUX_SYS_OPENAT,
-            &normalized,
-            path_len,
-            result,
-            false,
-        );
-        return result;
+            // We want to create it. We will use FAT32 kind.
+            is_file = true;
+            // Find parent path
+            let mut last_slash = 0;
+            for i in 0..path_len {
+                if normalized[i] == b'/' {
+                    last_slash = i;
+                }
+            }
+            let parent_path = if last_slash == 0 { &b"/"[..] } else { &normalized[..last_slash] };
+            let filename = core::str::from_utf8(&normalized[last_slash + 1..path_len]).unwrap_or("NEWFILE");
+            if let Some(parent_meta) = linux_fat_lookup_guest_path(parent_path, parent_path.len()) {
+                unsafe {
+                    let fat = &mut crate::fat32::GLOBAL_FAT;
+                    let _ = fat.write_text_file_in_dir(parent_meta.cluster, filename, &[]);
+                }
+            }
+        }
     }
     if exists && wants_create && wants_excl {
         let result = linux_neg_errno(17); // EEXIST
@@ -11962,26 +14679,42 @@ fn linux_sys_openat(
         open_slot.flags |= LINUX_DUP3_CLOEXEC;
     }
     if is_file {
-        let runtime_idx = if let Some(runtime_idx) = runtime_idx_opt {
-            runtime_idx
-        } else {
-            match linux_runtime_ensure_guest_file_slot(state, &normalized, path_len) {
-                Ok((idx, _)) => idx,
-                Err(err) => {
-                    linux_record_last_path_lookup(
-                        state,
-                        LINUX_SYS_OPENAT,
-                        &normalized,
-                        path_len,
-                        err,
-                        false,
-                    );
-                    return err;
-                }
+        if wants_create || (flags & LINUX_O_WRONLY) != 0 || (flags & LINUX_O_RDWR) != 0 {
+            // Bypass runtime cache for writes and creations, use raw FAT32 kind
+            open_slot.kind = LINUX_OPEN_KIND_FAT32;
+            let mut name_buf = [0u8; 256];
+            let name_len = path_len.min(255);
+            name_buf[..name_len].copy_from_slice(&normalized[..name_len]);
+            // Store the path directly, or a simpler reference. For now, use object_index = 0
+            // and we will rely on cursor/path resolution later.
+            // A more robust implementation would parse the FAT32 cluster.
+            if let Some(meta) = linux_fat_lookup_guest_path(&normalized, path_len) {
+                open_slot.object_index = meta.cluster as usize;
+            } else {
+                open_slot.object_index = 0; // Means not found / new
             }
-        };
-        open_slot.kind = LINUX_OPEN_KIND_RUNTIME;
-        open_slot.object_index = runtime_idx;
+        } else {
+            let runtime_idx = if let Some(runtime_idx) = runtime_idx_opt {
+                runtime_idx
+            } else {
+                match linux_runtime_ensure_guest_file_slot(state, &normalized, path_len) {
+                    Ok((idx, _)) => idx,
+                    Err(err) => {
+                        linux_record_last_path_lookup(
+                            state,
+                            LINUX_SYS_OPENAT,
+                            &normalized,
+                            path_len,
+                            err,
+                            false,
+                        );
+                        return err;
+                    }
+                }
+            };
+            open_slot.kind = LINUX_OPEN_KIND_RUNTIME;
+            open_slot.object_index = runtime_idx;
+        }
     } else {
         let Some(dir_idx) = linux_allocate_dir_slot(state, &normalized, path_len) else {
             return linux_neg_errno(24); // EMFILE-style exhaustion in shim metadata
@@ -12086,6 +14819,26 @@ fn linux_sys_read(state: &mut LinuxShimState, fd: u64, buf: u64, len: u64) -> i6
             state.open_files[open_idx].cursor = cursor.saturating_add(to_copy);
             to_copy as i64
         }
+        LINUX_OPEN_KIND_FAT32 => {
+            let cluster = slot.object_index as u32;
+            if cluster < 2 {
+                return 0; // Empty file or invalid
+            }
+            let cursor = slot.cursor;
+            let to_read = len.min(i64::MAX as u64) as usize;
+            let mut read_buf = crate::alloc::vec::Vec::with_capacity(to_read);
+            read_buf.resize(to_read, 0);
+            
+            unsafe {
+                let fat = &mut crate::fat32::GLOBAL_FAT;
+                let read_len = fat.read_file_range(cluster, usize::MAX, cursor as usize, &mut read_buf).unwrap_or(0);
+                if read_len > 0 {
+                    ptr::copy_nonoverlapping(read_buf.as_ptr(), buf as *mut u8, read_len);
+                    state.open_files[open_idx].cursor = cursor.saturating_add(read_len as u64);
+                }
+                read_len as i64
+            }
+        }
         LINUX_OPEN_KIND_DIR => linux_neg_errno(21), // EISDIR
         LINUX_OPEN_KIND_EVENTFD => {
             if len < 8 {
@@ -12168,6 +14921,22 @@ fn linux_sys_lseek(state: &mut LinuxShimState, fd: u64, offset: u64, whence: u64
         match whence {
             LINUX_SEEK_SET => 0i128,
             LINUX_SEEK_CUR => state.open_files[open_idx].cursor as i128,
+            _ => return linux_neg_errno(22), // EINVAL
+        }
+    } else if kind == LINUX_OPEN_KIND_FAT32 {
+        let cluster = state.open_files[open_idx].object_index as u32;
+        let size = if cluster >= 2 {
+            unsafe {
+                let fat = &mut crate::fat32::GLOBAL_FAT;
+                fat.get_file_size(cluster).unwrap_or(0) as u64
+            }
+        } else {
+            0
+        };
+        match whence {
+            LINUX_SEEK_SET => 0i128,
+            LINUX_SEEK_CUR => state.open_files[open_idx].cursor as i128,
+            LINUX_SEEK_END => size as i128,
             _ => return linux_neg_errno(22), // EINVAL
         }
     } else {
@@ -12463,6 +15232,29 @@ fn linux_sys_brk(state: &mut LinuxShimState, requested: u64) -> i64 {
     if new_brk < state.brk_base || new_brk > state.brk_limit {
         return state.brk_current as i64;
     }
+    
+    if new_brk > state.brk_current {
+        let align_old = linux_align_up(state.brk_current, LINUX_PAGE_SIZE).unwrap();
+        let align_new = linux_align_up(new_brk, LINUX_PAGE_SIZE).unwrap();
+        if align_new > align_old {
+            let size = align_new - align_old;
+            if let Ok(layout) = core::alloc::Layout::from_size_align(size as usize, LINUX_PAGE_SIZE as usize) {
+                let ptr = unsafe { alloc::alloc::alloc(layout) };
+                if !ptr.is_null() {
+                    let cr3 = crate::paging::get_current_cr3();
+                    let mut offset = 0;
+                    while offset < size {
+                        let _ = crate::paging::map_page(cr3, align_old + offset, ptr as u64 + offset, true, true);
+                        offset += LINUX_PAGE_SIZE;
+                    }
+                } else {
+                    return state.brk_current as i64; // Out of memory
+                }
+            } else {
+                return state.brk_current as i64;
+            }
+        }
+    }
     state.brk_current = new_brk;
     new_brk as i64
 }
@@ -12561,6 +15353,16 @@ fn linux_sys_mmap(
     }
     unsafe {
         ptr::write_bytes(mapped_ptr, 0, aligned_len as usize);
+    }
+
+    let cr3_val = crate::paging::get_current_cr3();
+    let addr = mapped_ptr as u64;
+    let aligned_start = addr & !(LINUX_PAGE_SIZE - 1);
+    let aligned_end = (addr + aligned_len + LINUX_PAGE_SIZE - 1) & !(LINUX_PAGE_SIZE - 1);
+    let mut offset = aligned_start;
+    while offset < aligned_end {
+        let _ = crate::paging::map_page(cr3_val, offset, offset, true, true);
+        offset += LINUX_PAGE_SIZE;
     }
 
     let is_anon = (flags & LINUX_MAP_ANONYMOUS) != 0;
@@ -12783,9 +15585,16 @@ fn linux_sys_clock_gettime(clock_id: u64, tp: u64) -> i64 {
         return linux_neg_errno(22); // EINVAL
     }
 
-    let ticks = timer::ticks();
-    let secs = (ticks / 1000) as i64;
-    let nanos = ((ticks % 1000) * 1_000_000) as i64;
+    let (secs, nanos) = if clock_id == LINUX_CLOCK_REALTIME {
+        let unix_ms = timer::wall_clock_unix_millis();
+        (
+            unix_ms.div_euclid(1000),
+            unix_ms.rem_euclid(1000).saturating_mul(1_000_000),
+        )
+    } else {
+        let ticks = timer::ticks();
+        ((ticks / 1000) as i64, ((ticks % 1000) * 1_000_000) as i64)
+    };
     unsafe {
         let out = tp as *mut LinuxTimespec;
         ptr::write(
@@ -12822,9 +15631,9 @@ fn linux_sys_clock_getres(clock_id: u64, tp: u64) -> i64 {
 }
 
 fn linux_sys_gettimeofday(tv: u64, tz: u64) -> i64 {
-    let ticks = timer::ticks();
-    let secs = (ticks / 1000) as i64;
-    let usec = ((ticks % 1000) * 1000) as i64;
+    let unix_ms = timer::wall_clock_unix_millis();
+    let secs = unix_ms.div_euclid(1000);
+    let usec = unix_ms.rem_euclid(1000).saturating_mul(1000);
 
     if tv != 0 {
         unsafe {
@@ -12845,7 +15654,7 @@ fn linux_sys_gettimeofday(tv: u64, tz: u64) -> i64 {
             ptr::write(
                 out,
                 LinuxTimezone {
-                    tz_minuteswest: 0,
+                    tz_minuteswest: -timer::wall_clock_timezone_offset_minutes(),
                     tz_dsttime: 0,
                 },
             );
@@ -13356,6 +16165,7 @@ fn linux_sys_clone_spawn(
             new_pid,
             parent_pid,
             new_pid,
+            crate::paging::create_process_pml4(),
             parent_proc.brk_base,
             parent_proc.brk_current,
             parent_proc.brk_limit,
@@ -13629,11 +16439,13 @@ fn linux_execve_reset_process_image(state: &mut LinuxShimState, tls_tcb_addr: u6
     state.mmap_count = 0;
 
     state.processes = [LinuxProcessSlot::empty(); LINUX_MAX_PROCESSES];
+    let cr3 = crate::paging::create_process_pml4();
     state.processes[0] = LinuxProcessSlot {
         active: true,
         pid: current_pid,
         parent_pid,
         leader_tid: current_tid,
+        cr3,
         brk_base: brk_base_aligned,
         brk_current: brk_base_aligned,
         brk_limit,
@@ -13642,6 +16454,8 @@ fn linux_execve_reset_process_image(state: &mut LinuxShimState, tls_tcb_addr: u6
     };
     state.process_count = 1;
     state.current_pid = current_pid;
+
+    map_plan_to_cr3(cr3);
 
     kept_thread.active = true;
     kept_thread.tid = current_tid;
@@ -14970,6 +17784,33 @@ unsafe fn linux_shim_store_active_plan(plan: crate::linux_compat::LinuxDynLaunch
     LINUX_SHIM_ACTIVE_PLAN = Box::into_raw(Box::new(plan));
 }
 
+fn map_plan_to_cr3(cr3: Option<u64>) {
+    let Some(cr3_val) = cr3 else { return; };
+    unsafe {
+        if LINUX_SHIM_ACTIVE_PLAN.is_null() { return; }
+        let plan = &*LINUX_SHIM_ACTIVE_PLAN;
+        let mut map_buf = |buf: &[u8]| {
+            if buf.is_empty() { return; }
+            let addr = buf.as_ptr() as u64;
+            let len = buf.len() as u64;
+            let aligned_start = addr & !(LINUX_PAGE_SIZE - 1);
+            let aligned_end = (addr + len + LINUX_PAGE_SIZE - 1) & !(LINUX_PAGE_SIZE - 1);
+            let mut offset = aligned_start;
+            while offset < aligned_end {
+                let _ = crate::paging::map_page(cr3_val, offset, offset, true, true);
+                offset += LINUX_PAGE_SIZE;
+            }
+        };
+        map_buf(&plan.main_image.image);
+        map_buf(&plan.main_image.phdr_blob);
+        map_buf(&plan.main_image.tls_block);
+        map_buf(&plan.interp_image.image);
+        map_buf(&plan.interp_image.phdr_blob);
+        map_buf(&plan.interp_image.tls_block);
+        map_buf(&plan.stack_image);
+    }
+}
+
 pub fn linux_shim_reset_watchdog() {
     unsafe {
         LINUX_SHIM.start_tick = timer::ticks();
@@ -15028,6 +17869,7 @@ pub fn linux_shim_begin(main_entry: u64, interp_entry: u64, stack_ptr: u64, tls_
             pid: pid_value,
             parent_pid: 1,
             leader_tid: tid_value,
+            cr3: crate::paging::create_process_pml4(),
             brk_base: brk_base_aligned,
             brk_current: brk_base_aligned,
             brk_limit,
@@ -15075,7 +17917,7 @@ pub fn linux_shim_run_real_slice(
         return summary;
     }
 
-    let (entry_eff, stack_eff, tls_eff, reset_context) = unsafe {
+    let (entry_eff, stack_eff, tls_eff, process_cr3, reset_context) = unsafe {
         let state = &mut LINUX_SHIM;
         let _ = linux_process_futex_timeouts(state);
         let mut reset_context = state.exec_transition_pending;
@@ -15129,7 +17971,12 @@ pub fn linux_shim_run_real_slice(
         } else {
             tls_tcb_addr
         };
-        (entry_eff, stack_eff, tls_eff, reset_context)
+        let process_cr3 = if let Some(proc_idx) = linux_find_process_slot_index(state, state.current_pid) {
+            state.processes[proc_idx].cr3
+        } else {
+            None
+        };
+        (entry_eff, stack_eff, tls_eff, process_cr3, reset_context)
     };
 
     if entry_eff == 0 || stack_eff == 0 {
@@ -15148,7 +17995,9 @@ pub fn linux_shim_run_real_slice(
         privilege::linux_real_slice_configure_soft_preempt(true, 2048);
     }
 
+    crate::paging::switch_to_process_cr3(process_cr3);
     let report = privilege::linux_real_slice_run(entry_eff, stack_eff, tls_eff, call_budget);
+    crate::paging::switch_to_process_cr3(None);
     summary.completed_calls = report.calls.min(u32::MAX as u64) as u32;
 
     let status = linux_shim_status();

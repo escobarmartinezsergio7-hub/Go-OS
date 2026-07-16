@@ -1,0 +1,7 @@
+<App title="Linux Qt Wayland Demo" theme="dark">
+  <View padding="16" background="#0F172A">
+    <Header text="Qt Demo Package" color="#22D3EE" size="22" />
+    <Text value="Compila QTWLDMO.BIN y ejecuta en terminal Linux." color="#E5E7EB" />
+    <Text value="linux runloop startx /QTWLDMO.BIN" color="#93C5FD" />
+  </View>
+</App>

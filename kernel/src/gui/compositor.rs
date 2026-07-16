@@ -27,11 +27,11 @@ const START_MENU_X: i32 = 5;
 const START_MENU_W: u32 = 200;
 const START_MENU_ITEM_H: u32 = 24;
 const START_MENU_PADDING: i32 = 8;
-const START_MENU_ITEMS: usize = 9;
+const START_MENU_ITEMS: usize = 11;
 
 const TOOLS_MENU_W: u32 = 180;
 const TOOLS_MENU_PADDING: i32 = 8;
-const TOOLS_MENU_ITEMS: usize = 4;
+const TOOLS_MENU_ITEMS: usize = 5;
 const GAMES_MENU_W: u32 = 180;
 const GAMES_MENU_PADDING: i32 = 8;
 const GAMES_MENU_ITEMS: usize = 1;
@@ -67,16 +67,20 @@ const TASK_HEAP_COPY_BASE_BYTES: usize = 8 * 1024 * 1024;
 const TASK_HEAP_COPY_SCALE_DIVISOR: usize = 8;
 const INSTALL_UI_PUMP_EVERY_FILES: usize = 1;
 const INSTALL_PROGRESS_LOG_EVERY_FILES: usize = 256;
-const INSTALL_READ_UI_PUMP_EVERY_BYTES: usize = 32 * 1024;
-const INSTALL_GZIP_IN_CHUNK_BYTES: usize = 32 * 1024;
-const INSTALL_GZIP_OUT_CHUNK_BYTES: usize = 32 * 1024;
+const INSTALL_READ_UI_PUMP_EVERY_BYTES: usize = 4 * 1024;
+const INSTALL_GZIP_IN_CHUNK_BYTES: usize = 8 * 1024;
+const INSTALL_GZIP_OUT_CHUNK_BYTES: usize = 8 * 1024;
 const INSTALL_LOG_MAX_BYTES: usize = 64 * 1024;
 const INSTALL_LOG_FLUSH_BYTES: usize = 2 * 1024;
-const INSTALL_SHA256_PUMP_BYTES: usize = 256 * 1024;
-const INSTALL_READ_CHUNK_BYTES: usize = 1024 * 1024;
-const INSTALL_READ_CHUNK_BYTES_UEFI: usize = 128 * 1024;
-const INSTALL_READ_CHUNK_BYTES_IRQ: usize = 64 * 1024;
-const INSTALL_FORCE_SECTOR_WRITE_BYTES: usize = 128 * 1024;
+const INSTALL_SHA256_PUMP_BYTES: usize = 16 * 1024;
+const INSTALL_READ_CHUNK_BYTES: usize = 32 * 1024;
+const INSTALL_READ_CHUNK_BYTES_UEFI: usize = 16 * 1024;
+const INSTALL_READ_CHUNK_BYTES_IRQ: usize = 8 * 1024;
+const INSTALL_FORCE_SECTOR_WRITE_BYTES: usize = 16 * 1024;
+const INSTALL_ENABLE_AP_TASKS: bool = false;
+const INSTALL_ENABLE_AP_SHA256: bool = false;
+const INSTALL_ENABLE_AP_TAR_SCAN: bool = false;
+const INSTALL_ENABLE_AP_GZIP_INFLATE: bool = false;
 const INSTALL_DISABLE_UEFI_BLOCKIO: bool = false;
 const COPY_PROGRESS_FORCE_NON_MODAL: bool = false;
 const INSTALL_PROGRESS_MODAL: bool = false;
@@ -177,7 +181,10 @@ const LINUX_BRIDGE_DEFAULT_HEIGHT: u32 = 450;
 const LINUX_GUEST_ROOTFS_DEFAULT: &str = "/compat/linux";
 const LINUX_GUEST_SHARED_MOUNT_DEFAULT: &str = "/mnt/redux";
 const LINUX_GUEST_SHARED_PREFIX_DEFAULT: &str = "GOOS:";
-const COPY_MAX_FILE_BYTES: usize = 256 * 1024 * 1024;
+const FAT32_MAX_FILE_BYTES: usize = u32::MAX as usize;
+const COPY_MAX_FILE_BYTES: usize = FAT32_MAX_FILE_BYTES;
+const COPY_BUFFERED_FALLBACK_MAX_BYTES: usize = 64 * 1024 * 1024;
+const COPY_ENABLE_AP_STORAGE_TASKS: bool = false;
 const APP_RUNNER_MAX_LAYOUT_BYTES: usize = 64 * 1024;
 const IMAGE_VIEWER_MAX_FILE_BYTES: usize = 8 * 1024 * 1024;
 const IMAGE_VIEWER_MAX_INFLATED_BYTES: usize = 32 * 1024 * 1024;
@@ -187,13 +194,14 @@ const DESKTOP_DISK_ICON_H: u32 = 92;
 const DESKTOP_DISK_MENU_W: u32 = 160;
 const DESKTOP_DISK_MENU_ITEM_H: u32 = 24;
 const DESKTOP_DISK_MENU_ITEMS: usize = 2;
-const DESKTOP_DISK_PROBE_INTERVAL_TICKS: u64 = 60;
+const DESKTOP_DISK_PROBE_INTERVAL_TICKS: u64 = 600;
 const DESKTOP_ITEMS_START_X: i32 = 18;
 const DESKTOP_ITEM_W: u32 = 104;
 const DESKTOP_ITEM_H: u32 = 92;
 const DESKTOP_ITEM_GAP_X: i32 = 14;
 const DESKTOP_ITEM_GAP_Y: i32 = 10;
 const DESKTOP_ITEMS_MAX: usize = 48;
+const DESKTOP_SURFACE_CACHE_TICKS: u64 = 30;
 const DESKTOP_STATUS_MAX_CHARS: usize = 86;
 const DESKTOP_CREATE_PROMPT_W: u32 = 360;
 const DESKTOP_CREATE_PROMPT_H: u32 = 160;
@@ -301,6 +309,43 @@ const FAVORITES_DIR_LEGACY_REQUEST_NAME: &str = "Favoritos";
 const FAVORITES_DIR_LEGACY_HASH_NAME: &str = "FAVO9534";
 const RECENT_SHORTCUT_PREFIX: &str = "recent|";
 const RECENT_SHORTCUT_MAX_BYTES: usize = 1024;
+const CLOCK_PANEL_W: u32 = 312;
+const CLOCK_PANEL_H: u32 = 232;
+const CLOCK_PANEL_PADDING: i32 = 12;
+const CLOCK_PANEL_ROW_H: i32 = 24;
+const CLOCK_PANEL_BUTTON_W: u32 = 24;
+const CLOCK_PANEL_BUTTON_H: u32 = 20;
+const CLOCK_PANEL_MIN_YEAR: i32 = 1970;
+const CLOCK_PANEL_MAX_YEAR: i32 = 2099;
+const DEFAULT_CLOCK_TZ_OFFSET_MINUTES: i32 = -360;
+
+#[derive(Clone, Copy)]
+struct ClockDateTime {
+    year: i32,
+    month: u8,
+    day: u8,
+    hour: u8,
+    minute: u8,
+    second: u8,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ClockPanelField {
+    Year,
+    Month,
+    Day,
+    Hour,
+    Minute,
+    TimeZone,
+}
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum ClockPanelAction {
+    Adjust(ClockPanelField, i32),
+    MexicoTimeZone,
+    SyncRtc,
+    Close,
+}
 
 struct ExplorerClickState {
     win_id: usize,
@@ -357,6 +402,8 @@ struct ExplorerContextMenuState {
     target_item: Option<ExplorerItem>,
     show_paste: bool,
     selection_count: usize,
+    item_count: usize,
+    is_trash_dir: bool,
     target_app_command: Option<String>,
 }
 
@@ -496,6 +543,7 @@ struct WindowRecentBinding {
 struct DesktopDragState {
     source_dir_cluster: u32,
     source_dir_path: String,
+    source_device_index: Option<usize>,
     item: ExplorerItem,
     cluster: u32,
     label: String,
@@ -511,6 +559,7 @@ struct DesktopDragState {
 struct DesktopCreateFolderState {
     dir_cluster: u32,
     dir_path: String,
+    device_index: Option<usize>,
     input: String,
 }
 
@@ -663,6 +712,7 @@ struct InstallTaskWorker {
     progress_ptr: *mut CopyProgressShared,
     last_units: usize,
     last_items: usize,
+    io_mode_guard: Option<StableIoModeGuard>,
     heap_reservation: Option<crate::allocator::HeapReservation>,
 }
 
@@ -771,6 +821,7 @@ struct TerminalFsTaskWorker {
     progress_ptr: *mut CopyProgressShared,
     last_units: usize,
     last_items: usize,
+    io_mode_guard: Option<StableIoModeGuard>,
     heap_reservation: Option<crate::allocator::HeapReservation>,
 }
 
@@ -796,7 +847,62 @@ struct ClipboardPasteTaskWorker {
     progress_ptr: *mut CopyProgressShared,
     last_units: usize,
     last_items: usize,
+    io_mode_guard: Option<StableIoModeGuard>,
     heap_reservation: Option<crate::allocator::HeapReservation>,
+}
+
+struct StableIoModeGuard {
+    restore_irq: bool,
+    irq_timer_paused: bool,
+}
+
+impl StableIoModeGuard {
+    fn enter() -> Self {
+        let was_irq_mode = crate::syscall::runtime_irq_mode_active();
+        let was_irq_timer_armed = crate::interrupts::irq_timer_source_armed();
+        let restore_irq =
+            was_irq_mode || was_irq_timer_armed || crate::interrupts::irq0_count() > 0;
+
+        crate::runtime::request_runtime_mode(crate::runtime::RuntimeMode::Polling);
+        let irq_mode_active = crate::runtime::service_mode_switch_non_runtime(was_irq_mode);
+        crate::syscall::set_runtime_state(crate::timer::ticks(), true, irq_mode_active);
+        if !irq_mode_active {
+            crate::runtime::request_runtime_mode(crate::runtime::RuntimeMode::Polling);
+        }
+
+        let irq_timer_paused =
+            if irq_mode_active || crate::interrupts::irq_timer_source_armed() {
+                crate::interrupts::suspend_irq_timer()
+            } else {
+                false
+            };
+        if irq_timer_paused {
+            crate::syscall::set_runtime_state(crate::timer::ticks(), true, false);
+        }
+
+        Self {
+            restore_irq,
+            irq_timer_paused,
+        }
+    }
+
+    fn restores_irq(&self) -> bool {
+        self.restore_irq
+    }
+
+    fn restore(self) {
+        if self.irq_timer_paused {
+            crate::interrupts::resume_irq_timer();
+        }
+        if self.restore_irq {
+            crate::runtime::request_runtime_mode(crate::runtime::RuntimeMode::IrqSafe);
+            let irq_mode_active = crate::runtime::service_mode_switch_non_runtime(false);
+            crate::syscall::set_runtime_state(crate::timer::ticks(), true, irq_mode_active);
+            if !irq_mode_active {
+                crate::runtime::request_runtime_mode(crate::runtime::RuntimeMode::Polling);
+            }
+        }
+    }
 }
 
 extern "efiapi" fn terminal_fs_task_worker(arg: *mut core::ffi::c_void) {
@@ -1395,6 +1501,7 @@ pub struct Compositor {
     desktop_switcher_open: bool,
     minimized_overflow_open: bool,
     minimized_overflow_scroll: usize,
+    clock_panel_open: bool,
     last_mouse_down: bool,
     last_mouse_right_down: bool,
     mouse_input_priority_frames: u8,
@@ -1416,6 +1523,15 @@ pub struct Compositor {
     desktop_disk_icons: Vec<DesktopDiskIcon>,
     desktop_disk_last_probe_tick: u64,
     desktop_usb_ejected_device_index: Option<usize>,
+    named_root_candidate_cache: Vec<usize>,
+    named_root_candidate_cache_skipped: Option<usize>,
+    named_root_candidate_cache_valid: bool,
+    desktop_surface_cache_valid: bool,
+    desktop_surface_cache_tick: u64,
+    desktop_surface_cache_cluster: u32,
+    desktop_surface_cache_path: String,
+    desktop_surface_cache_device_index: usize,
+    desktop_surface_cache_items: Vec<ExplorerItem>,
     desktop_surface_status: String,
     explorer_selected_items: Vec<ExplorerSelectionItem>,
     desktop_selected_items: Vec<DesktopSelectionItem>,
@@ -1498,6 +1614,8 @@ pub struct Compositor {
     needs_repaint: bool,
     /// Right-click context menu on a pinned taskbar item: (actual_idx, menu_x, menu_y)
     pinned_context_menu_index: Option<(usize, i32, i32)>,
+    is_suspended: bool,
+    suspend_ignore_mouse_until_release: bool,
 }
 
 impl Compositor {
@@ -1517,6 +1635,310 @@ impl Compositor {
             menu.width - (START_MENU_PADDING as u32 * 2),
             START_MENU_ITEM_H,
         )
+    }
+
+    fn days_from_civil(year: i32, month: u8, day: u8) -> i64 {
+        let y = year - if month <= 2 { 1 } else { 0 };
+        let era = if y >= 0 { y } else { y - 399 } / 400;
+        let yoe = y - era * 400;
+        let m = month as i32;
+        let doy = (153 * (m + if m > 2 { -3 } else { 9 }) + 2) / 5 + day as i32 - 1;
+        let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+        (era as i64) * 146_097 + (doe as i64) - 719_468
+    }
+
+    fn civil_from_days(days: i64) -> (i32, u8, u8) {
+        let z = days + 719_468;
+        let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+        let doe = z - era * 146_097;
+        let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+        let y = yoe + era * 400;
+        let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        let mp = (5 * doy + 2) / 153;
+        let day = doy - (153 * mp + 2) / 5 + 1;
+        let month = mp + if mp < 10 { 3 } else { -9 };
+        let year = y + if month <= 2 { 1 } else { 0 };
+        (year as i32, month as u8, day as u8)
+    }
+
+    fn is_leap_year(year: i32) -> bool {
+        (year % 4 == 0 && year % 100 != 0) || year % 400 == 0
+    }
+
+    fn days_in_month(year: i32, month: u8) -> u8 {
+        match month {
+            1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
+            4 | 6 | 9 | 11 => 30,
+            2 if Self::is_leap_year(year) => 29,
+            2 => 28,
+            _ => 30,
+        }
+    }
+
+    fn clock_datetime_from_local_seconds(local_seconds: i64) -> ClockDateTime {
+        let days = local_seconds.div_euclid(86_400);
+        let seconds_of_day = local_seconds.rem_euclid(86_400);
+        let (year, month, day) = Self::civil_from_days(days);
+        ClockDateTime {
+            year,
+            month,
+            day,
+            hour: (seconds_of_day / 3600) as u8,
+            minute: ((seconds_of_day / 60) % 60) as u8,
+            second: (seconds_of_day % 60) as u8,
+        }
+    }
+
+    fn local_seconds_from_clock_datetime(dt: ClockDateTime) -> i64 {
+        Self::days_from_civil(dt.year, dt.month, dt.day)
+            .saturating_mul(86_400)
+            .saturating_add((dt.hour as i64) * 3600)
+            .saturating_add((dt.minute as i64) * 60)
+            .saturating_add(dt.second as i64)
+    }
+
+    fn current_local_clock_datetime(&self) -> ClockDateTime {
+        let utc_seconds = crate::timer::wall_clock_unix_millis().div_euclid(1000);
+        let offset_seconds =
+            (crate::timer::wall_clock_timezone_offset_minutes() as i64).saturating_mul(60);
+        Self::clock_datetime_from_local_seconds(utc_seconds.saturating_add(offset_seconds))
+    }
+
+    fn uefi_time_to_unix_seconds(time: &uefi::runtime::Time) -> Option<i64> {
+        let year = time.year();
+        if year < 1970 {
+            return None;
+        }
+
+        let mut seconds = Self::days_from_civil(year as i32, time.month(), time.day())
+            .checked_mul(86_400)?
+            .checked_add((time.hour() as i64) * 3600)?
+            .checked_add((time.minute() as i64) * 60)?
+            .checked_add(time.second() as i64)?;
+        if let Some(offset_minutes) = time.time_zone() {
+            seconds = seconds.checked_sub((offset_minutes as i64) * 60)?;
+        }
+        Some(seconds)
+    }
+
+    fn read_uefi_unix_seconds() -> Option<i64> {
+        uefi::runtime::get_time()
+            .ok()
+            .and_then(|time| Self::uefi_time_to_unix_seconds(&time))
+    }
+
+    fn sync_wall_clock_from_uefi(timezone_offset_minutes: i32) -> bool {
+        let Some(unix_seconds) = Self::read_uefi_unix_seconds() else {
+            return false;
+        };
+        crate::timer::set_wall_clock_unix_millis(
+            unix_seconds.saturating_mul(1000),
+            timezone_offset_minutes,
+        );
+        true
+    }
+
+    fn apply_local_clock_datetime(&mut self, dt: ClockDateTime) {
+        let timezone_offset_minutes = crate::timer::wall_clock_timezone_offset_minutes();
+        crate::timer::set_wall_clock_from_local_unix_seconds(
+            Self::local_seconds_from_clock_datetime(dt),
+            timezone_offset_minutes,
+        );
+    }
+
+    fn adjust_clock_panel_field(&mut self, field: ClockPanelField, delta: i32) {
+        if field == ClockPanelField::TimeZone {
+            let current = crate::timer::wall_clock_timezone_offset_minutes();
+            let next = (current + delta.saturating_mul(60)).clamp(-12 * 60, 14 * 60);
+            crate::timer::set_wall_clock_timezone_offset_minutes(next);
+            return;
+        }
+
+        let mut dt = self.current_local_clock_datetime();
+        match field {
+            ClockPanelField::Year => {
+                dt.year = (dt.year + delta).clamp(CLOCK_PANEL_MIN_YEAR, CLOCK_PANEL_MAX_YEAR);
+                dt.day = dt.day.min(Self::days_in_month(dt.year, dt.month));
+                self.apply_local_clock_datetime(dt);
+            }
+            ClockPanelField::Month => {
+                let mut year = dt.year;
+                let mut month = dt.month as i32 + delta;
+                while month < 1 {
+                    month += 12;
+                    year -= 1;
+                }
+                while month > 12 {
+                    month -= 12;
+                    year += 1;
+                }
+                year = year.clamp(CLOCK_PANEL_MIN_YEAR, CLOCK_PANEL_MAX_YEAR);
+                dt.year = year;
+                dt.month = month.clamp(1, 12) as u8;
+                dt.day = dt.day.min(Self::days_in_month(dt.year, dt.month));
+                self.apply_local_clock_datetime(dt);
+            }
+            ClockPanelField::Day => {
+                let local = Self::local_seconds_from_clock_datetime(dt)
+                    .saturating_add((delta as i64).saturating_mul(86_400));
+                self.apply_local_clock_datetime(Self::clock_datetime_from_local_seconds(local));
+            }
+            ClockPanelField::Hour => {
+                let local = Self::local_seconds_from_clock_datetime(dt)
+                    .saturating_add((delta as i64).saturating_mul(3600));
+                self.apply_local_clock_datetime(Self::clock_datetime_from_local_seconds(local));
+            }
+            ClockPanelField::Minute => {
+                let local = Self::local_seconds_from_clock_datetime(dt)
+                    .saturating_add((delta as i64).saturating_mul(60));
+                self.apply_local_clock_datetime(Self::clock_datetime_from_local_seconds(local));
+            }
+            ClockPanelField::TimeZone => {}
+        }
+    }
+
+    fn timezone_offset_label(offset_minutes: i32) -> String {
+        let sign = if offset_minutes < 0 { '-' } else { '+' };
+        let abs = offset_minutes.abs();
+        alloc::format!("UTC{}{:02}:{:02}", sign, abs / 60, abs % 60)
+    }
+
+    fn taskbar_clock_rect(&self) -> Rect {
+        use crate::gui::widgets::taskbar::*;
+        let tray_x = self.taskbar.tray_start_x();
+        let clock_x = tray_x
+            + PINNED_ARROW_W
+            + PINNED_VISIBLE as i32 * (PINNED_ICON_SIZE + PINNED_GAP)
+            + PINNED_ARROW_W
+            + 4
+            + SETTINGS_ICON_W
+            + 4;
+        Rect::new(clock_x, 0, CLOCK_W as u32, self.taskbar.rect.height)
+    }
+
+    fn taskbar_clock_screen_rect(&self) -> Rect {
+        let rel = self.taskbar_clock_rect();
+        Rect::new(
+            self.taskbar.rect.x + rel.x,
+            self.taskbar.rect.y + rel.y,
+            rel.width,
+            rel.height,
+        )
+    }
+
+    fn clock_panel_rect(&self) -> Rect {
+        let clock = self.taskbar_clock_screen_rect();
+        let preferred_x = clock.x + clock.width as i32 - CLOCK_PANEL_W as i32;
+        let max_x = self.width.saturating_sub(CLOCK_PANEL_W as usize + 8) as i32;
+        let x = if max_x >= 8 {
+            preferred_x.clamp(8, max_x)
+        } else {
+            0
+        };
+        let y = (self.taskbar.rect.y - CLOCK_PANEL_H as i32 - 8).max(8);
+        Rect::new(x, y, CLOCK_PANEL_W, CLOCK_PANEL_H)
+    }
+
+    fn clock_panel_row_rect(&self, index: usize) -> Rect {
+        let panel = self.clock_panel_rect();
+        Rect::new(
+            panel.x + CLOCK_PANEL_PADDING,
+            panel.y + 42 + index as i32 * CLOCK_PANEL_ROW_H,
+            panel.width - (CLOCK_PANEL_PADDING as u32 * 2),
+            CLOCK_PANEL_ROW_H as u32,
+        )
+    }
+
+    fn clock_panel_adjust_button_rect(&self, index: usize, increment: bool) -> Rect {
+        let row = self.clock_panel_row_rect(index);
+        let x = if increment {
+            row.x + row.width as i32 - CLOCK_PANEL_BUTTON_W as i32
+        } else {
+            row.x + 112
+        };
+        Rect::new(x, row.y + 2, CLOCK_PANEL_BUTTON_W, CLOCK_PANEL_BUTTON_H)
+    }
+
+    fn clock_panel_mexico_button_rect(&self) -> Rect {
+        let panel = self.clock_panel_rect();
+        Rect::new(panel.x + 12, panel.y + panel.height as i32 - 34, 92, 22)
+    }
+
+    fn clock_panel_rtc_button_rect(&self) -> Rect {
+        let panel = self.clock_panel_rect();
+        Rect::new(panel.x + 110, panel.y + panel.height as i32 - 34, 82, 22)
+    }
+
+    fn clock_panel_close_button_rect(&self) -> Rect {
+        let panel = self.clock_panel_rect();
+        Rect::new(
+            panel.x + panel.width as i32 - 62,
+            panel.y + panel.height as i32 - 34,
+            50,
+            22,
+        )
+    }
+
+    fn clock_panel_hit_test(&self, point: Point) -> Option<ClockPanelAction> {
+        let fields = [
+            ClockPanelField::Year,
+            ClockPanelField::Month,
+            ClockPanelField::Day,
+            ClockPanelField::Hour,
+            ClockPanelField::Minute,
+            ClockPanelField::TimeZone,
+        ];
+        for (idx, field) in fields.iter().enumerate() {
+            if self.clock_panel_adjust_button_rect(idx, false).contains(point) {
+                return Some(ClockPanelAction::Adjust(*field, -1));
+            }
+            if self.clock_panel_adjust_button_rect(idx, true).contains(point) {
+                return Some(ClockPanelAction::Adjust(*field, 1));
+            }
+        }
+        if self.clock_panel_mexico_button_rect().contains(point) {
+            return Some(ClockPanelAction::MexicoTimeZone);
+        }
+        if self.clock_panel_rtc_button_rect().contains(point) {
+            return Some(ClockPanelAction::SyncRtc);
+        }
+        if self.clock_panel_close_button_rect().contains(point) {
+            return Some(ClockPanelAction::Close);
+        }
+        None
+    }
+
+    fn handle_clock_panel_click(&mut self, mouse_x: i32, mouse_y: i32) -> bool {
+        if !self.clock_panel_open {
+            return false;
+        }
+        let point = Point { x: mouse_x, y: mouse_y };
+        if self.taskbar_clock_screen_rect().contains(point) {
+            self.clock_panel_open = false;
+            return true;
+        }
+        let panel = self.clock_panel_rect();
+        if !panel.contains(point) {
+            self.clock_panel_open = false;
+            return true;
+        }
+        match self.clock_panel_hit_test(point) {
+            Some(ClockPanelAction::Adjust(field, delta)) => {
+                self.adjust_clock_panel_field(field, delta);
+            }
+            Some(ClockPanelAction::MexicoTimeZone) => {
+                crate::timer::set_wall_clock_timezone_offset_minutes(DEFAULT_CLOCK_TZ_OFFSET_MINUTES);
+            }
+            Some(ClockPanelAction::SyncRtc) => {
+                let timezone_offset_minutes = crate::timer::wall_clock_timezone_offset_minutes();
+                let _ = Self::sync_wall_clock_from_uefi(timezone_offset_minutes);
+            }
+            Some(ClockPanelAction::Close) => {
+                self.clock_panel_open = false;
+            }
+            None => {}
+        }
+        true
     }
 
     fn active_desktop_id(&self) -> u8 {
@@ -1547,6 +1969,7 @@ impl Compositor {
         }
         self.desktop_selected_items.clear();
         self.desktop_drag = None;
+        self.invalidate_desktop_surface_cache();
     }
 
     fn clear_desktop_transient_ui_state(&mut self) {
@@ -1897,7 +2320,8 @@ impl Compositor {
             WindowKind::Search
             | WindowKind::Explorer
             | WindowKind::ImageViewer
-            | WindowKind::MediaPlayer => None,
+            | WindowKind::MediaPlayer
+            | WindowKind::VideoPlayer => None,
         }
     }
 
@@ -1999,15 +2423,31 @@ impl Compositor {
             .map(|state| state.directory_name.clone())
     }
 
+    fn resolve_desktop_directory_target_for_desktop_id_with_index(
+        &mut self,
+        desktop_id: u8,
+        create_if_missing: bool,
+    ) -> Result<(u32, String, usize), String> {
+        let dir_name = self
+            .desktop_directory_name_for_desktop_id(desktop_id)
+            .ok_or_else(|| alloc::format!("Escritorio {} no disponible.", desktop_id))?;
+        self.resolve_named_root_dir_on_best_volume_with_index(
+            dir_name.as_str(),
+            create_if_missing,
+            false,
+        )
+    }
+
     fn resolve_desktop_directory_target_for_desktop_id(
         &mut self,
         desktop_id: u8,
         create_if_missing: bool,
     ) -> Result<(u32, String), String> {
-        let dir_name = self
-            .desktop_directory_name_for_desktop_id(desktop_id)
-            .ok_or_else(|| alloc::format!("Escritorio {} no disponible.", desktop_id))?;
-        self.resolve_named_root_dir_on_best_volume(dir_name.as_str(), create_if_missing)
+        self.resolve_desktop_directory_target_for_desktop_id_with_index(
+            desktop_id,
+            create_if_missing,
+        )
+        .map(|(cluster, path, _index)| (cluster, path))
     }
 
     fn resolve_desktop_recents_directory_for_desktop_id(
@@ -2015,8 +2455,14 @@ impl Compositor {
         desktop_id: u8,
         create_if_missing: bool,
     ) -> Result<(u32, String), String> {
-        let (desktop_cluster, desktop_path) =
-            self.resolve_desktop_directory_target_for_desktop_id(desktop_id, create_if_missing)?;
+        let (desktop_cluster, desktop_path, desktop_device_index) = self
+            .resolve_desktop_directory_target_for_desktop_id_with_index(
+                desktop_id,
+                create_if_missing,
+            )?;
+        if !self.ensure_volume_index_mounted(desktop_device_index) {
+            return Err(String::from("No se pudo montar el volumen de Desktop."));
+        }
         let recents_cluster = {
             let fat = unsafe { &mut crate::fat32::GLOBAL_FAT };
             let canonical_path = alloc::format!("{}/", DESKTOP_RECENTS_DIR_NAME);
@@ -2168,7 +2614,7 @@ impl Compositor {
 
     fn save_favorite_shortcut(&mut self, label: &str, command: &str) -> Result<bool, String> {
         if !self.ensure_fat_ready() {
-            return Err(String::from("No hay volumen FAT32 disponible."));
+            return Err(String::from("No hay volumen FAT32/exFAT disponible."));
         }
         let (favorites_cluster, _favorites_path) = self.resolve_favorites_directory_target(true)?;
         let result = {
@@ -2324,6 +2770,8 @@ impl Compositor {
             "img"
         } else if Self::is_audio_file_name(item.label.as_str()) {
             "aud"
+        } else if Self::is_video_file_name(item.label.as_str()) {
+            "vid"
         } else {
             "txt"
         };
@@ -2963,8 +3411,10 @@ impl Compositor {
                 let kind = if Self::is_png_file_name(item.label.as_str()) {
                     "img"
                 } else if Self::is_audio_file_name(item.label.as_str()) {
-                    "aud"
-                } else {
+            "aud"
+        } else if Self::is_video_file_name(item.label.as_str()) {
+            "vid"
+        } else {
                     "txt"
                 };
                 command = Some(Self::recent_file_command(
@@ -3362,6 +3812,81 @@ impl Compositor {
         }
         let rest = head[label.len()..].trim_start();
         rest.starts_with('(') || rest.starts_with('[') || rest.starts_with('-')
+    }
+
+    fn volume_label_is_placeholder(label: &str) -> bool {
+        let normalized = Self::ascii_lower(label.trim());
+        normalized.is_empty()
+            || normalized == "no name"
+            || normalized == "noname"
+            || normalized == "untitled"
+    }
+
+    fn path_head_matches_mounted_volume_alias(
+        fat: &crate::fat32::Fat32,
+        head: &str,
+    ) -> bool {
+        if let Some(label) = Self::volume_label_text(fat) {
+            if Self::path_head_matches_volume_label(head, label.as_str()) {
+                return true;
+            }
+        }
+
+        match fat.mounted_fs {
+            crate::fat32::DetectedFsKind::ExFat => {
+                Self::path_head_matches_volume_label(head, "ZENOX DATA")
+            }
+            crate::fat32::DetectedFsKind::Fat32 => {
+                Self::path_head_matches_volume_label(head, "ZENOX OS")
+            }
+            _ => false,
+        }
+    }
+
+    fn path_head_matches_mounted_volume(
+        fat: &crate::fat32::Fat32,
+        device_index: usize,
+        head: &str,
+    ) -> bool {
+        if Self::path_head_matches_mounted_volume_alias(fat, head) {
+            return true;
+        }
+
+        let display_label = Self::explorer_volume_label_for_mounted(device_index, fat);
+        Self::path_head_matches_volume_label(head, display_label.as_str())
+    }
+
+    fn explorer_volume_label_for_mounted(
+        device_index: usize,
+        fat: &crate::fat32::Fat32,
+    ) -> String {
+        if let Some(label) = Self::volume_label_text(fat) {
+            return label;
+        }
+
+        match fat.mounted_fs {
+            crate::fat32::DetectedFsKind::ExFat => String::from("ZENOX DATA"),
+            crate::fat32::DetectedFsKind::Fat32 => String::from("ZENOX OS"),
+            _ => alloc::format!("VOL{}", device_index),
+        }
+    }
+
+    fn explorer_volume_label_for_detected(
+        dev: &crate::fat32::DetectedBlockDevice,
+        is_boot: bool,
+    ) -> String {
+        if let Some(label) = Self::volume_label_from_bytes(&dev.fat_volume_label) {
+            return label;
+        }
+
+        if dev.fs_kind == crate::fat32::DetectedFsKind::ExFat {
+            return String::from("ZENOX DATA");
+        }
+        if is_boot || dev.fs_kind == crate::fat32::DetectedFsKind::Fat32 {
+            return String::from("ZENOX OS");
+        }
+
+        alloc::format!("VOL{}", dev.index)
     }
 
     fn is_double_click_delta(delta: u64) -> bool {
@@ -6164,15 +6689,8 @@ impl Compositor {
 
         while offset < file_size {
             let want = (file_size - offset).min(chunk_len);
-            let irq_guard = crate::syscall::runtime_irq_mode_active();
-            if irq_guard {
-                crate::interrupts::suspend_irq_timer();
-            }
             let read_result =
                 fat.read_file_range(start_cluster, file_size, offset, &mut chunk[..want]);
-            if irq_guard {
-                crate::interrupts::resume_irq_timer();
-            }
             let read = read_result?;
             if read == 0 {
                 return Err("IO Error");
@@ -6194,7 +6712,10 @@ impl Compositor {
     }
 
     fn sha256_hex(raw: &[u8]) -> String {
-        if raw.len() >= INSTALL_SHA256_AP_MIN_BYTES && crate::smp::aps_online() > 0 {
+        if INSTALL_ENABLE_AP_SHA256
+            && raw.len() >= INSTALL_SHA256_AP_MIN_BYTES
+            && crate::smp::aps_online() > 0
+        {
             if let Ok(digest) = crate::smp::sha256_on_ap(raw) {
                 return Self::sha256_hex_from_bytes(&digest);
             }
@@ -7052,10 +7573,6 @@ impl Compositor {
                                 );
                                 self.install_log_push(log_line.as_str());
                                 self.flush_install_log_if_needed(fat, true);
-                                let irq_guard = crate::syscall::runtime_irq_mode_active();
-                                if irq_guard {
-                                    crate::interrupts::suspend_irq_timer();
-                                }
                                 let write_result = fat.write_text_file_in_dir_with_progress(
                                     target_cluster,
                                     out_name.as_str(),
@@ -7091,9 +7608,6 @@ impl Compositor {
                                     },
                                 );
 
-                                if irq_guard {
-                                    crate::interrupts::resume_irq_timer();
-                                }
                                 match write_result {
                                     Ok(()) => {
                                         *files_written += 1;
@@ -7155,7 +7669,7 @@ impl Compositor {
         }
 
         let mut ap_entries: Option<Vec<crate::smp::TarScanEntry>> = None;
-        if crate::smp::aps_online() > 0 && tar_raw.len() >= 1024 {
+        if INSTALL_ENABLE_AP_TAR_SCAN && crate::smp::aps_online() > 0 && tar_raw.len() >= 1024 {
             ap_entries = crate::smp::tar_scan_on_ap(tar_raw, INSTALL_TAR_SCAN_AP_MAX_ENTRIES).ok();
         }
 
@@ -7360,7 +7874,11 @@ impl Compositor {
 
         let install_prompt_active = self.copy_progress_prompt.is_some();
         let ap_limit = Self::install_gzip_ap_max_output_bytes().min(max_output);
-        if crate::smp::aps_online() > 0 && ap_limit > 0 && isize <= ap_limit {
+        if INSTALL_ENABLE_AP_GZIP_INFLATE
+            && crate::smp::aps_online() > 0
+            && ap_limit > 0
+            && isize <= ap_limit
+        {
             if install_prompt_active {
                 self.install_progress_set_target(900, Some("Descomprimiendo data.tar.gz (AP)..."));
             }
@@ -7570,10 +8088,6 @@ impl Compositor {
                         );
                         self.install_log_push(log_line.as_str());
                         self.flush_install_log_if_needed(fat, true);
-                        let irq_guard = crate::syscall::runtime_irq_mode_active();
-                        if irq_guard {
-                            crate::interrupts::suspend_irq_timer();
-                        }
                         let write_result = fat.write_text_file_in_dir_with_progress(
                             target_cluster,
                             out_name.as_str(),
@@ -7609,9 +8123,6 @@ impl Compositor {
                                 !self.copy_progress_cancel_requested()
                             },
                         );
-                        if irq_guard {
-                            crate::interrupts::resume_irq_timer();
-                        }
                         match write_result {
                             Ok(()) => {
                                 *files_written += 1;
@@ -8080,8 +8591,9 @@ impl Compositor {
         }
 
         match core::str::from_utf8(&fat.volume_label[..end]) {
-            Ok(s) => Some(String::from(s)),
+            Ok(s) if !Self::volume_label_is_placeholder(s) => Some(String::from(s)),
             Err(_) => None,
+            _ => None,
         }
     }
 
@@ -8099,8 +8611,9 @@ impl Compositor {
         }
 
         match core::str::from_utf8(&label[..end]) {
-            Ok(s) => Some(String::from(s)),
+            Ok(s) if !Self::volume_label_is_placeholder(s) => Some(String::from(s)),
             Err(_) => None,
+            _ => None,
         }
     }
 
@@ -8707,6 +9220,35 @@ impl Compositor {
         }
     }
 
+    fn service_video_player_windows(&mut self) {
+        let active_desktop = self.active_desktop_id();
+        let now = crate::timer::ticks();
+        let mut rendered = false;
+
+        for win in self.windows.iter_mut() {
+            if win.kind != WindowKind::VideoPlayer
+                || win.desktop_id != active_desktop
+                || (win.state != WindowState::Normal && win.state != WindowState::Maximized)
+                || !win.doom_native_running
+                || win.video_player_file_cluster < 2
+            {
+                continue;
+            }
+
+            let ms_per_frame = (1000 / win.video_player_fps.max(1) as u64).max(1);
+            if win.video_player_last_tick == 0
+                || now >= win.video_player_last_tick.saturating_add(ms_per_frame)
+            {
+                win.render();
+                rendered = true;
+            }
+        }
+
+        if rendered {
+            self.needs_repaint = true;
+        }
+    }
+
     fn cancel_install_tasks(&mut self) -> bool {
         let mut touched = false;
         if let Some(worker) = self.install_task_worker.as_ref() {
@@ -8840,6 +9382,25 @@ impl Compositor {
             runtime_items,
             runtime_ticks
         )
+    }
+
+    fn readonly_exfat_write_message() -> &'static str {
+        "volumen no escribible o no soportado para escritura."
+    }
+
+    fn ensure_fat32_write_target(fat: &crate::fat32::Fat32) -> Result<(), String> {
+        if fat.bytes_per_sector == 0 {
+            return Err(String::from("volumen no montado."));
+        }
+        if !fat.mounted_fs.is_mountable() {
+            return Err(String::from(Self::readonly_exfat_write_message()));
+        }
+        Ok(())
+    }
+
+    fn ensure_global_fat32_write_target() -> Result<(), String> {
+        let fat = unsafe { &crate::fat32::GLOBAL_FAT };
+        Self::ensure_fat32_write_target(fat)
     }
 
     fn enqueue_terminal_fs_task(
@@ -9006,6 +9567,11 @@ impl Compositor {
                     ));
                     return out;
                 }
+                if let Err(err) = Self::ensure_fat32_write_target(fat) {
+                    self.current_volume_device_index = prev_volume;
+                    out.push(alloc::format!("Task #{} CP/MV error: {}", task.id, err));
+                    return out;
+                }
                 let source = match Self::find_file_entry_by_hint(
                     fat,
                     src_dir_cluster,
@@ -9019,6 +9585,7 @@ impl Compositor {
                         return out;
                     }
                 };
+                let source_fs_name = Self::dir_entry_fs_name(fat, &source);
                 if source.size as usize > COPY_MAX_FILE_BYTES {
                     self.current_volume_device_index = prev_volume;
                     out.push(alloc::format!(
@@ -9051,9 +9618,9 @@ impl Compositor {
                     Ok(bytes) => {
                         if do_move {
                             self.copy_progress_touch(
-                                alloc::format!("Eliminando origen {}", src_leaf).as_str(),
+                                alloc::format!("Eliminando origen {}", source_fs_name).as_str(),
                             );
-                            match fat.delete_file_in_dir(src_dir_cluster, src_leaf.as_str()) {
+                            match fat.delete_file_in_dir(src_dir_cluster, source_fs_name.as_str()) {
                                 Ok(()) => {
                                     self.copy_progress_sync(None, 1, 1, false);
                                     out.push(alloc::format!(
@@ -9113,6 +9680,10 @@ impl Compositor {
                         return out;
                     }
                 };
+                if let Err(err) = Self::ensure_fat32_write_target(&dst_fat) {
+                    out.push(alloc::format!("Task #{} CPDEV error: {}", task.id, err));
+                    return out;
+                }
                 let source = match Self::find_file_entry_by_hint(
                     &mut src_fat,
                     src_dir_cluster,
@@ -9194,6 +9765,10 @@ impl Compositor {
                     ));
                     return (out, false);
                 }
+                if let Err(err) = Self::ensure_fat32_write_target(fat) {
+                    out.push(alloc::format!("Task #{} CP/MV error: {}", task.id, err));
+                    return (out, false);
+                }
 
                 let source = match Self::find_file_entry_by_hint(
                     fat,
@@ -9207,6 +9782,7 @@ impl Compositor {
                         return (out, false);
                     }
                 };
+                let source_fs_name = Self::dir_entry_fs_name(fat, &source);
 
                 if source.size as usize > COPY_MAX_FILE_BYTES {
                     out.push(alloc::format!(
@@ -9235,7 +9811,7 @@ impl Compositor {
                                 out.push(alloc::format!("Task #{}: cancelada.", task.id));
                                 return (out, false);
                             }
-                            match fat.delete_file_in_dir(src_dir_cluster, src_leaf.as_str()) {
+                            match fat.delete_file_in_dir(src_dir_cluster, source_fs_name.as_str()) {
                                 Ok(()) => {
                                     progress.advance_items(1);
                                     out.push(alloc::format!(
@@ -9300,6 +9876,10 @@ impl Compositor {
                         return (out, false);
                     }
                 };
+                if let Err(err) = Self::ensure_fat32_write_target(&dst_fat) {
+                    out.push(alloc::format!("Task #{} CPDEV error: {}", task.id, err));
+                    return (out, false);
+                }
                 let source = match Self::find_file_entry_by_hint(
                     &mut src_fat,
                     src_dir_cluster,
@@ -9371,6 +9951,7 @@ impl Compositor {
                 if fat.bytes_per_sector == 0 {
                     return Err(String::from("volumen no montado"));
                 }
+                Self::ensure_fat32_write_target(fat)?;
                 let source = Self::find_file_entry_by_hint(
                     fat,
                     src_dir_cluster,
@@ -9399,12 +9980,18 @@ impl Compositor {
                 src_device_index,
                 src_dir_cluster,
                 ref src_leaf,
+                dst_device_index,
                 ..
             } => {
                 let mut src_fat = crate::fat32::Fat32::new();
                 src_fat
                     .mount_uefi_block_device(src_device_index)
                     .map_err(|e| alloc::format!("montando origen: {}", e))?;
+                let mut dst_fat = crate::fat32::Fat32::new();
+                dst_fat
+                    .mount_uefi_block_device(dst_device_index)
+                    .map_err(|e| alloc::format!("montando destino: {}", e))?;
+                Self::ensure_fat32_write_target(&dst_fat)?;
                 let source = Self::find_file_entry_by_hint(
                     &mut src_fat,
                     src_dir_cluster,
@@ -9557,7 +10144,7 @@ impl Compositor {
             let prev_volume = comp.current_volume_device_index;
             comp.current_volume_device_index = Some(task.dst_device_index);
             let item_result = comp.execute_clipboard_paste_to_directory(&item_clip, task.dst_dir_cluster);
-            comp.current_volume_device_index = prev_volume;
+            comp.restore_compositor_mount_after_io(prev_volume);
             match item_result {
                 Ok((status, cut_done, cross_device)) => {
                     task.ok_count += 1;
@@ -9642,6 +10229,9 @@ impl Compositor {
                 let cancelled = progress.cancelled()
                     || crate::worker_pool::is_cancel_requested(job.worker_job_id);
 
+                if let Some(guard) = worker.io_mode_guard.take() {
+                    guard.restore();
+                }
                 self.finish_install_progress_prompt(success && !cancelled);
                 self.install_task_active = None;
                 self.install_task_busy = false;
@@ -9769,8 +10359,10 @@ impl Compositor {
         ));
         let job_ptr = Box::into_raw(job);
 
-        let ap_allowed =
-            crate::smp::aps_online() > 0 && !crate::runtime::runtime_uefi_active();
+        let mut io_mode_guard = Some(StableIoModeGuard::enter());
+        let ap_allowed = INSTALL_ENABLE_AP_TASKS
+            && crate::smp::aps_online() > 0
+            && !crate::runtime::runtime_uefi_active();
         if !(ap_allowed
             && crate::smp::dispatch_to_any_ap(
                 install_task_worker,
@@ -9786,6 +10378,9 @@ impl Compositor {
                 &progress,
                 active.worker_job_id,
             );
+            if let Some(guard) = io_mode_guard.take() {
+                guard.restore();
+            }
             self.finish_install_progress_prompt(ok);
             let _ = crate::worker_pool::finish(
                 active.worker_job_id,
@@ -9812,6 +10407,7 @@ impl Compositor {
             progress_ptr,
             last_units: 0,
             last_items: 0,
+            io_mode_guard,
             heap_reservation,
         });
     }
@@ -9847,6 +10443,9 @@ impl Compositor {
                 let cancelled = progress.cancelled()
                     || crate::worker_pool::is_cancel_requested(job.worker_job_id);
 
+                if let Some(guard) = worker.io_mode_guard.take() {
+                    guard.restore();
+                }
                 self.finish_copy_progress_prompt();
                 self.terminal_fs_task_active = None;
                 self.terminal_fs_task_busy = false;
@@ -9999,8 +10598,10 @@ impl Compositor {
         ));
         let job_ptr = Box::into_raw(job);
 
-        let ap_allowed =
-            crate::smp::aps_online() > 0 && !crate::runtime::runtime_uefi_active();
+        let mut io_mode_guard = Some(StableIoModeGuard::enter());
+        let ap_allowed = COPY_ENABLE_AP_STORAGE_TASKS
+            && crate::smp::aps_online() > 0
+            && !crate::runtime::runtime_uefi_active();
         if !(ap_allowed
             && crate::smp::dispatch_to_any_ap(
                 terminal_fs_task_worker,
@@ -10013,6 +10614,9 @@ impl Compositor {
             let _job = unsafe { Box::from_raw(job_ptr) };
             let _ = unsafe { Box::from_raw(progress_ptr) };
             let out = self.execute_terminal_fs_task(&active.task);
+            if let Some(guard) = io_mode_guard.take() {
+                guard.restore();
+            }
             self.finish_copy_progress_prompt();
             let _ = crate::worker_pool::finish(
                 active.worker_job_id,
@@ -10031,6 +10635,7 @@ impl Compositor {
             progress_ptr,
             last_units: 0,
             last_items: 0,
+            io_mode_guard,
             heap_reservation,
         });
     }
@@ -13900,6 +14505,7 @@ impl Compositor {
         let taskbar_h = 40;
         let taskbar_y = (height - taskbar_h as usize) as i32;
         let taskbar_window = Window::new(9999, "Taskbar", 0, taskbar_y, width as u32, taskbar_h);
+        Self::sync_wall_clock_from_uefi(DEFAULT_CLOCK_TZ_OFFSET_MINUTES);
 
         let mut comp = Self {
             windows: Vec::new(),
@@ -13920,6 +14526,7 @@ impl Compositor {
             desktop_switcher_open: false,
             minimized_overflow_open: false,
             minimized_overflow_scroll: 0,
+            clock_panel_open: false,
             last_mouse_down: false,
             last_mouse_right_down: false,
             mouse_input_priority_frames: 0,
@@ -13941,6 +14548,15 @@ impl Compositor {
             desktop_disk_icons: Vec::new(),
             desktop_disk_last_probe_tick: 0,
             desktop_usb_ejected_device_index: None,
+            named_root_candidate_cache: Vec::new(),
+            named_root_candidate_cache_skipped: None,
+            named_root_candidate_cache_valid: false,
+            desktop_surface_cache_valid: false,
+            desktop_surface_cache_tick: 0,
+            desktop_surface_cache_cluster: 0,
+            desktop_surface_cache_path: String::new(),
+            desktop_surface_cache_device_index: 0,
+            desktop_surface_cache_items: Vec::new(),
             desktop_surface_status: String::new(),
             explorer_selected_items: Vec::new(),
             desktop_selected_items: Vec::new(),
@@ -14023,6 +14639,8 @@ impl Compositor {
             desktop_scroll: 0,
             needs_repaint: true,
             pinned_context_menu_index: None,
+            is_suspended: false,
+            suspend_ignore_mouse_until_release: false,
         };
         comp.refresh_desktop_disk_icons(true);
         comp
@@ -14247,6 +14865,20 @@ impl Compositor {
         self.attach_new_window(win)
     }
 
+    pub fn create_video_player_window(
+        &mut self,
+        title: &str,
+        x: i32,
+        y: i32,
+        width: u32,
+        height: u32,
+    ) -> usize {
+        let id = self.next_id;
+        self.next_id += 1;
+        let win = Window::new_video_player(id, String::from(title), x, y, width, height);
+        self.attach_new_window(win)
+    }
+
     fn detect_all_disk_devices(&self) -> Vec<(usize, String, bool, bool)> {
         let devices = crate::fat32::Fat32::detect_uefi_block_devices();
         let boot_device_index = crate::fat32::Fat32::boot_block_device_index();
@@ -14305,6 +14937,18 @@ impl Compositor {
                 current_x = start_x;
                 current_y += DESKTOP_DISK_ICON_H as i32 + gap_y;
             }
+        }
+
+        let devices_changed = self.desktop_disk_icons.len() != new_icons.len()
+            || self
+                .desktop_disk_icons
+                .iter()
+                .zip(new_icons.iter())
+                .any(|(old, new)| old.device_index != new.device_index);
+        if devices_changed {
+            self.named_root_candidate_cache.clear();
+            self.named_root_candidate_cache_valid = false;
+            self.invalidate_desktop_surface_cache();
         }
 
         self.desktop_disk_icons = new_icons;
@@ -14509,6 +15153,7 @@ impl Compositor {
         self.desktop_selected_items.clear();
         self.desktop_drag = None;
         self.desktop_create_folder = None;
+        self.invalidate_desktop_surface_cache();
         self.rename_prompt = None;
         self.notepad_save_prompt = None;
         self.ide_unsaved_prompt = None;
@@ -14616,15 +15261,22 @@ impl Compositor {
         any_open
     }
 
-    fn resolve_named_root_dir_on_best_volume(
+    fn resolve_named_root_dir_on_best_volume_with_index(
         &mut self,
         shortcut_name: &str,
         create_if_missing: bool,
-    ) -> Result<(u32, String), String> {
-        let candidates = self.auto_mount_candidate_indices();
+        prefer_data_volume: bool,
+    ) -> Result<(u32, String, usize), String> {
+        let candidates = if prefer_data_volume {
+            self.named_root_candidate_indices()
+        } else {
+            self.auto_mount_candidate_indices()
+        };
         if candidates.is_empty() {
-            return Err(String::from("No hay volumen FAT32 disponible."));
+            return Err(String::from("No hay volumen FAT32/exFAT disponible."));
         }
+
+        let mut data_create_error: Option<String> = None;
 
         for index in candidates.iter().copied() {
             if !self.ensure_volume_index_mounted(index) {
@@ -14632,10 +15284,10 @@ impl Compositor {
             }
             let outcome = {
                 let fat = unsafe { &mut crate::fat32::GLOBAL_FAT };
-                let volume_label = Self::volume_label_text(fat).unwrap_or(alloc::format!("VOL{}", index));
+                let volume_label = Self::explorer_volume_label_for_mounted(index, fat);
                 match Self::resolve_named_root_dir_cluster(fat, shortcut_name, false) {
                     Ok((cluster, _created)) => {
-                        Ok((cluster, alloc::format!("{}/{}/", volume_label, shortcut_name)))
+                        Ok((cluster, alloc::format!("{}/{}/", volume_label, shortcut_name), index))
                     }
                     Err(err) => Err(err),
                 }
@@ -14643,19 +15295,56 @@ impl Compositor {
             if let Ok(found) = outcome {
                 return Ok(found);
             }
+
+            if create_if_missing {
+                let create_outcome = {
+                    let fat = unsafe { &mut crate::fat32::GLOBAL_FAT };
+                    if fat.mounted_fs != crate::fat32::DetectedFsKind::ExFat {
+                        None
+                    } else {
+                        let volume_label =
+                            Self::explorer_volume_label_for_mounted(index, fat);
+                        Some(match Self::resolve_named_root_dir_cluster(fat, shortcut_name, true) {
+                            Ok((cluster, _created)) => Ok((
+                                cluster,
+                                alloc::format!("{}/{}/", volume_label, shortcut_name),
+                                index,
+                            )),
+                            Err(err) => Err(alloc::format!(
+                                "No se pudo crear '{}' en {}: {}",
+                                shortcut_name,
+                                volume_label,
+                                err
+                            )),
+                        })
+                    }
+                };
+
+                match create_outcome {
+                    Some(Ok(found)) => return Ok(found),
+                    Some(Err(err)) if data_create_error.is_none() => {
+                        data_create_error = Some(err);
+                    }
+                    _ => {}
+                }
+            }
         }
 
         if create_if_missing {
+            if let Some(err) = data_create_error {
+                return Err(err);
+            }
+
             for index in candidates.iter().copied() {
                 if !self.ensure_volume_index_mounted(index) {
                     continue;
                 }
                 let outcome = {
                     let fat = unsafe { &mut crate::fat32::GLOBAL_FAT };
-                    let volume_label = Self::volume_label_text(fat).unwrap_or(alloc::format!("VOL{}", index));
+                    let volume_label = Self::explorer_volume_label_for_mounted(index, fat);
                     match Self::resolve_named_root_dir_cluster(fat, shortcut_name, true) {
                         Ok((cluster, _created)) => {
-                            Ok((cluster, alloc::format!("{}/{}/", volume_label, shortcut_name)))
+                            Ok((cluster, alloc::format!("{}/{}/", volume_label, shortcut_name), index))
                         }
                         Err(err) => Err(err),
                     }
@@ -14672,18 +15361,60 @@ impl Compositor {
         ))
     }
 
-    fn resolve_desktop_directory_target(&mut self, create_if_missing: bool) -> Result<(u32, String), String> {
+    fn resolve_named_root_dir_on_best_volume(
+        &mut self,
+        shortcut_name: &str,
+        create_if_missing: bool,
+    ) -> Result<(u32, String), String> {
+        self.resolve_named_root_dir_on_best_volume_with_index(shortcut_name, create_if_missing, false)
+            .map(|(cluster, path, _index)| (cluster, path))
+    }
+
+    fn resolve_desktop_directory_target_with_index(
+        &mut self,
+        create_if_missing: bool,
+    ) -> Result<(u32, String, usize), String> {
         let desktop_dir = self.active_desktop_directory_name();
-        let (cluster, path) =
-            self.resolve_named_root_dir_on_best_volume(desktop_dir.as_str(), create_if_missing)?;
+        let (cluster, path, device_index) = self
+            .resolve_named_root_dir_on_best_volume_with_index(
+                desktop_dir.as_str(),
+                create_if_missing,
+                false,
+            )?;
         if create_if_missing {
             self.ensure_active_desktop_recents_directory();
         }
-        Ok((cluster, path))
+        Ok((cluster, path, device_index))
     }
 
-    fn desktop_surface_items(&mut self) -> Option<(u32, String, Vec<ExplorerItem>)> {
-        let (desktop_cluster, desktop_path) = self.resolve_desktop_directory_target(false).ok()?;
+    fn resolve_desktop_directory_target(&mut self, create_if_missing: bool) -> Result<(u32, String), String> {
+        self.resolve_desktop_directory_target_with_index(create_if_missing)
+            .map(|(cluster, path, _index)| (cluster, path))
+    }
+
+    fn invalidate_desktop_surface_cache(&mut self) {
+        self.desktop_surface_cache_valid = false;
+        self.desktop_surface_cache_items.clear();
+    }
+
+    fn desktop_surface_items(&mut self) -> Option<(u32, String, usize, Vec<ExplorerItem>)> {
+        let now = crate::timer::ticks();
+        if self.desktop_surface_cache_valid
+            && now.saturating_sub(self.desktop_surface_cache_tick) <= DESKTOP_SURFACE_CACHE_TICKS
+        {
+            return Some((
+                self.desktop_surface_cache_cluster,
+                self.desktop_surface_cache_path.clone(),
+                self.desktop_surface_cache_device_index,
+                self.desktop_surface_cache_items.clone(),
+            ));
+        }
+
+        let (desktop_cluster, desktop_path, desktop_device_index) =
+            self.resolve_desktop_directory_target_with_index(false).ok()?;
+        if !self.ensure_volume_index_mounted(desktop_device_index) {
+            return None;
+        }
         let mut items = {
             let fat = unsafe { &mut crate::fat32::GLOBAL_FAT };
             Self::build_explorer_dir_items(fat, desktop_cluster)
@@ -14698,7 +15429,14 @@ impl Compositor {
         items.push(ExplorerItem::new("Papelera", ExplorerItemKind::ShortcutRecycleBin, 0, 0));
         items.push(ExplorerItem::new("Inicio", ExplorerItemKind::Home, 0, 0));
 
-        Some((desktop_cluster, desktop_path, items))
+        self.desktop_surface_cache_valid = true;
+        self.desktop_surface_cache_tick = now;
+        self.desktop_surface_cache_cluster = desktop_cluster;
+        self.desktop_surface_cache_path = desktop_path.clone();
+        self.desktop_surface_cache_device_index = desktop_device_index;
+        self.desktop_surface_cache_items = items.clone();
+
+        Some((desktop_cluster, desktop_path, desktop_device_index, items))
     }
 
     fn desktop_item_key_eq(cluster: u32, label: &str, item: &ExplorerItem) -> bool {
@@ -14974,8 +15712,9 @@ impl Compositor {
         &mut self,
         mouse_x: i32,
         mouse_y: i32,
-    ) -> Option<(u32, String, Vec<ExplorerItem>, ExplorerItem, Rect)> {
-        let (desktop_cluster, desktop_path, items) = self.desktop_surface_items()?;
+    ) -> Option<(u32, String, Option<usize>, Vec<ExplorerItem>, ExplorerItem, Rect)> {
+        let (desktop_cluster, desktop_path, desktop_device_index, items) =
+            self.desktop_surface_items()?;
         for (idx, item) in items.iter().enumerate() {
             let Some(slot) = self.desktop_surface_item_rect(idx, item) else {
                 break;
@@ -14984,6 +15723,7 @@ impl Compositor {
                 return Some((
                     desktop_cluster,
                     desktop_path.clone(),
+                    Some(desktop_device_index),
                     items.clone(),
                     item.clone(),
                     slot,
@@ -15211,7 +15951,9 @@ impl Compositor {
     }
 
     fn draw_desktop_surface_overlay(&mut self) {
-        let Some((desktop_cluster, _desktop_path, items)) = self.desktop_surface_items() else {
+        let Some((desktop_cluster, _desktop_path, _desktop_device_index, items)) =
+            self.desktop_surface_items()
+        else {
             self.desktop_selected_items.clear();
             self.desktop_drag = None;
             return;
@@ -15401,7 +16143,7 @@ impl Compositor {
             return false;
         }
 
-        if let Some((source_dir_cluster, source_dir_path, items, item, _slot)) =
+        if let Some((source_dir_cluster, source_dir_path, _source_device_index, items, item, _slot)) =
             self.desktop_surface_item_at(mouse_x, mouse_y)
         {
             let selected = self.desktop_collect_selected_items(source_dir_cluster, items.as_slice());
@@ -15418,12 +16160,14 @@ impl Compositor {
                 ExplorerContextMenuKind::FileItem
             };
             let show_paste = self.explorer_clipboard.is_some();
+            let is_trash_dir = Self::explorer_source_is_trash_dir(source_dir_cluster);
             let mut item_count = Self::explorer_context_item_count_for_kind(
                 kind,
                 Some(&item),
                 Some(source_dir_path.as_str()),
                 source_dir_cluster,
                 selected_count.max(1),
+                is_trash_dir,
             );
             if show_paste {
                 item_count += 1;
@@ -15439,6 +16183,8 @@ impl Compositor {
                 target_item: Some(item),
                 show_paste,
                 selection_count: selected_count.max(1),
+                item_count,
+                is_trash_dir,
                 target_app_command: None,
             });
             return true;
@@ -15454,6 +16200,7 @@ impl Compositor {
         };
         let show_paste = self.explorer_clipboard.is_some();
         let item_count = if show_paste { 3 } else { 2 };
+        let is_trash_dir = Self::explorer_source_is_trash_dir(source_dir_cluster);
         let (menu_x, menu_y) = self.clamp_explorer_context_menu_origin(mouse_x, mouse_y, item_count);
         self.desktop_context_menu = Some(ExplorerContextMenuState {
             win_id: 0,
@@ -15464,6 +16211,8 @@ impl Compositor {
             target_item: None,
             show_paste,
             selection_count: 0,
+            item_count,
+            is_trash_dir,
             target_app_command: None,
         });
         true
@@ -15510,7 +16259,13 @@ impl Compositor {
         true
     }
 
-    fn open_desktop_item(&mut self, source_dir_cluster: u32, source_dir_path: String, item: &ExplorerItem) {
+    fn open_desktop_item(
+        &mut self,
+        source_dir_cluster: u32,
+        source_dir_path: String,
+        source_device_index: Option<usize>,
+        item: &ExplorerItem,
+    ) {
         if item.kind == ExplorerItemKind::Directory {
             let explorer_id = self.create_explorer_window("File Explorer - Desktop", 140, 80, 920, 580);
             let source_path_hint = source_dir_path.clone();
@@ -15523,7 +16278,7 @@ impl Compositor {
             let device_hint = self.resolve_device_index_for_directory(
                 source_dir_cluster,
                 Some(source_path_hint.as_str()),
-                self.current_volume_device_index,
+                source_device_index.or(self.current_volume_device_index),
             );
             self.show_explorer_directory(
                 explorer_id,
@@ -15537,6 +16292,9 @@ impl Compositor {
         }
 
         if item.kind == ExplorerItemKind::ShortcutRecycleBin {
+            if let Some(index) = source_device_index {
+                let _ = self.ensure_volume_index_mounted(index);
+            }
             let fat = unsafe { &mut crate::fat32::GLOBAL_FAT };
             let _ = fat.ensure_subdirectory(fat.root_cluster, "TRASH");
             let trash_cluster = fat.resolve_path(fat.root_cluster, "TRASH/").map(|(_, c)| c).unwrap_or(0);
@@ -15547,7 +16305,7 @@ impl Compositor {
                 trash_cluster,
                 String::from("TRASH/"),
                 String::from("Papelera de Reciclaje"),
-                self.current_volume_device_index,
+                source_device_index.or(self.current_volume_device_index),
             );
             self.desktop_surface_status = String::from("Papelera abierta.");
             return;
@@ -15573,6 +16331,8 @@ impl Compositor {
                 self.open_png_from_explorer_file(0, item);
             } else if Self::is_audio_file_name(item.label.as_str()) {
                 self.open_media_player_file(item.cluster, item.label.as_str(), item.size);
+            } else if Self::is_video_file_name(item.label.as_str()) {
+                self.open_video_player_file(item.cluster, item.label.as_str(), item.size);
             } else {
                 self.open_notepad_from_explorer_file(source_dir_cluster, source_dir_path, item);
             }
@@ -15588,7 +16348,7 @@ impl Compositor {
             return false;
         }
 
-        let Some((source_dir_cluster, source_dir_path, items, item, slot)) =
+        let Some((source_dir_cluster, source_dir_path, source_device_index, items, item, slot)) =
             self.desktop_surface_item_at(mouse_x, mouse_y)
         else {
             self.desktop_selected_items.clear();
@@ -15630,6 +16390,7 @@ impl Compositor {
         self.desktop_drag = Some(DesktopDragState {
             source_dir_cluster,
             source_dir_path: source_dir_path.clone(),
+            source_device_index,
             item: item.clone(),
             cluster: item.cluster,
             label: item.label.clone(),
@@ -15703,6 +16464,12 @@ impl Compositor {
         self.desktop_create_folder = Some(DesktopCreateFolderState {
             dir_cluster,
             dir_path,
+            device_index: self
+                .windows
+                .iter()
+                .find(|w| w.id == win_id)
+                .and_then(|w| w.explorer_device_index)
+                .or(self.current_volume_device_index),
             input: String::new(),
         });
         if let Some(win) = self.windows.iter_mut().find(|w| w.id == win_id) {
@@ -15711,14 +16478,15 @@ impl Compositor {
     }
 
     fn begin_desktop_create_folder(&mut self, dir_cluster: u32) {
-        let dir_path = self
-            .resolve_desktop_directory_target(true)
-            .map(|(_, path)| path)
-            .unwrap_or_else(|_| String::from("Desktop/"));
+        let (dir_path, device_index) = self
+            .resolve_desktop_directory_target_with_index(true)
+            .map(|(_, path, index)| (path, Some(index)))
+            .unwrap_or_else(|_| (String::from("Desktop/"), self.current_volume_device_index));
 
         self.desktop_create_folder = Some(DesktopCreateFolderState {
             dir_cluster,
             dir_path,
+            device_index,
             input: String::new(),
         });
         self.desktop_surface_status =
@@ -15743,8 +16511,15 @@ impl Compositor {
             self.desktop_surface_status = String::from("Nombre invalido para carpeta.");
             return;
         }
-        if !self.ensure_fat_ready() {
-            self.desktop_surface_status = String::from("No se pudo crear carpeta: FAT32 no disponible.");
+        if let Some(index) = prompt.device_index {
+            if let Err(err) = self.force_mount_volume_index_for_write(index) {
+                self.desktop_surface_status =
+                    alloc::format!("No se pudo crear carpeta: {}", err);
+                return;
+            }
+        } else if !self.ensure_fat_ready() {
+            self.desktop_surface_status =
+                String::from("No se pudo crear carpeta: FAT32/exFAT no disponible.");
             return;
         }
 
@@ -15756,11 +16531,13 @@ impl Compositor {
         match result {
             Ok(_) => {
                 self.desktop_create_folder = None;
+                self.invalidate_desktop_surface_cache();
                 self.desktop_surface_status = alloc::format!("Carpeta creada: {}", name);
-                self.refresh_explorer_windows_for_cluster(
+                self.refresh_explorer_windows_for_cluster_on_device(
                     prompt.dir_cluster,
                     alloc::format!("Carpeta creada: {}", name).as_str(),
                     None,
+                    prompt.device_index,
                 );
             }
             Err(err) => {
@@ -16021,10 +16798,10 @@ impl Compositor {
             return;
         }
 
-        let source_dir_path = self
-            .resolve_desktop_directory_target(true)
-            .map(|(_, path)| path)
-            .unwrap_or_else(|_| String::from("Desktop/"));
+        let (source_dir_path, source_device_index) = self
+            .resolve_desktop_directory_target_with_index(true)
+            .map(|(_, path, index)| (path, Some(index)))
+            .unwrap_or_else(|_| (String::from("Desktop/"), self.current_volume_device_index));
 
         self.explorer_context_menu = None;
         self.desktop_context_menu = None;
@@ -16032,7 +16809,7 @@ impl Compositor {
             origin: RenamePromptOrigin::Desktop,
             source_dir_cluster,
             source_dir_path,
-            source_device_index: self.current_volume_device_index,
+            source_device_index,
             source_item_cluster: item.cluster,
             source_label: item.label.clone(),
             source_is_directory: item.kind == ExplorerItemKind::Directory,
@@ -16161,7 +16938,7 @@ impl Compositor {
 
             match source_entry {
                 Ok(entry) => {
-                    let source_name = Self::dir_entry_short_name(&entry);
+                    let source_name = Self::dir_entry_fs_name(fat, &entry);
                     fat.rename_entry_in_dir(
                         prompt.source_dir_cluster,
                         source_name.as_str(),
@@ -16202,6 +16979,7 @@ impl Compositor {
                     }
                     RenamePromptOrigin::Desktop => {
                         self.desktop_selected_items.clear();
+                        self.invalidate_desktop_surface_cache();
                         self.desktop_surface_status = status.clone();
                         self.refresh_explorer_windows_for_cluster(
                             prompt.source_dir_cluster,
@@ -18490,7 +19268,7 @@ impl Compositor {
         let bottom_limit = self.taskbar.rect.y - 8;
         let mut max_y_found = top;
 
-        if let Some((_, _, items)) = self.desktop_surface_items() {
+        if let Some((_, _, _, items)) = self.desktop_surface_items() {
             for (idx, item) in items.iter().enumerate() {
                 if let Some(rect) = self.desktop_default_item_rect(idx) {
                     let mut y = rect.y + self.desktop_scroll;
@@ -19076,7 +19854,12 @@ impl Compositor {
             self.desktop_drag = None;
             if drag.open_on_release && !drag.moved {
                 let item = drag.item.clone();
-                self.open_desktop_item(drag.source_dir_cluster, drag.source_dir_path.clone(), &item);
+                self.open_desktop_item(
+                    drag.source_dir_cluster,
+                    drag.source_dir_path.clone(),
+                    drag.source_device_index,
+                    &item,
+                );
             }
             return true;
         }
@@ -19111,7 +19894,7 @@ impl Compositor {
         let canonical_x = next_rendered_x;
         let canonical_y = next_rendered_y + self.desktop_scroll;
 
-        if let Some((_, _, items)) = self.desktop_surface_items() {
+        if let Some((_, _, _, items)) = self.desktop_surface_items() {
             for (idx, item) in items.iter().enumerate() {
                 if Self::desktop_item_key_eq(drag.cluster, drag.label.as_str(), item) {
                     continue;
@@ -19309,18 +20092,24 @@ impl Compositor {
         true
     }
 
+    fn explorer_source_is_trash_dir(source_dir_cluster: u32) -> bool {
+        if source_dir_cluster < 2 {
+            return false;
+        }
+        let fat = unsafe { &mut crate::fat32::GLOBAL_FAT };
+        fat.resolve_path(fat.root_cluster, "TRASH/")
+            .map(|(_, c)| c == source_dir_cluster)
+            .unwrap_or(false)
+    }
+
     fn explorer_context_item_count_for_kind(
         kind: ExplorerContextMenuKind,
         target_item: Option<&ExplorerItem>,
         source_dir_path: Option<&str>,
         source_dir_cluster: u32,
         selection_count: usize,
+        is_trash_dir: bool,
     ) -> usize {
-        let is_trash_dir = {
-            let fat = unsafe { &mut crate::fat32::GLOBAL_FAT };
-            fat.resolve_path(fat.root_cluster, "TRASH/").map(|(_, c)| c).unwrap_or(0) == source_dir_cluster && source_dir_cluster >= 2
-        };
-
         if is_trash_dir {
             return 2; // Restaurar + Eliminar
         }
@@ -19361,29 +20150,7 @@ impl Compositor {
     }
 
     fn explorer_context_menu_item_count(&self, menu: &ExplorerContextMenuState) -> usize {
-        if menu.kind == ExplorerContextMenuKind::DesktopArea {
-            return if menu.show_paste { 3 } else { 2 };
-        }
-        if menu.kind == ExplorerContextMenuKind::PasteArea {
-            return if menu.show_paste { 3 } else { 2 };
-        }
-        let mut count = Self::explorer_context_item_count_for_kind(
-            menu.kind,
-            menu.target_item.as_ref(),
-            self.windows
-                .iter()
-                .find(|w| w.id == menu.win_id)
-                .map(|w| w.explorer_path.as_str()),
-            menu.source_dir_cluster,
-            menu.selection_count,
-        );
-        if menu.show_paste
-            && (menu.kind == ExplorerContextMenuKind::FileItem
-                || menu.kind == ExplorerContextMenuKind::DirectoryItem)
-        {
-            count += 1;
-        }
-        count
+        menu.item_count
     }
 
     fn explorer_context_menu_height(item_count: usize) -> u32 {
@@ -19583,6 +20350,144 @@ impl Compositor {
         framebuffer::draw_text_5x7(x + 8, y + 9, "Desfijar de barra", 0xFFE5E5);
     }
 
+    fn draw_clock_panel_overlay(&mut self) {
+        if !self.clock_panel_open {
+            return;
+        }
+
+        let panel = self.clock_panel_rect();
+        let px = panel.x.max(0) as usize;
+        let py = panel.y.max(0) as usize;
+        framebuffer::rect(px, py, panel.width as usize, panel.height as usize, 0x111827);
+        framebuffer::rect(px, py, panel.width as usize, 1, 0x6FA8DC);
+        framebuffer::rect(
+            px,
+            py + panel.height as usize - 1,
+            panel.width as usize,
+            1,
+            0x1D4E89,
+        );
+        framebuffer::rect(px, py, 1, panel.height as usize, 0x6FA8DC);
+        framebuffer::rect(
+            px + panel.width as usize - 1,
+            py,
+            1,
+            panel.height as usize,
+            0x1D4E89,
+        );
+
+        let dt = self.current_local_clock_datetime();
+        let timezone = Self::timezone_offset_label(crate::timer::wall_clock_timezone_offset_minutes());
+        let title = alloc::format!(
+            "{:04}-{:02}-{:02} {:02}:{:02}",
+            dt.year,
+            dt.month,
+            dt.day,
+            dt.hour,
+            dt.minute
+        );
+        framebuffer::draw_text_5x7(
+            (panel.x + 12).max(0) as usize,
+            (panel.y + 12).max(0) as usize,
+            title.as_str(),
+            0xEAF4FF,
+        );
+        framebuffer::draw_text_5x7(
+            (panel.x + 208).max(0) as usize,
+            (panel.y + 12).max(0) as usize,
+            timezone.as_str(),
+            0x93C5FD,
+        );
+
+        let rows = [
+            ("Anio", alloc::format!("{:04}", dt.year)),
+            ("Mes", alloc::format!("{:02}", dt.month)),
+            ("Dia", alloc::format!("{:02}", dt.day)),
+            ("Hora", alloc::format!("{:02}", dt.hour)),
+            ("Minuto", alloc::format!("{:02}", dt.minute)),
+            ("Zona", timezone),
+        ];
+
+        for (idx, (label, value)) in rows.iter().enumerate() {
+            let row = self.clock_panel_row_rect(idx);
+            let row_bg = if idx % 2 == 0 { 0x1F2937 } else { 0x172033 };
+            framebuffer::rect(
+                row.x.max(0) as usize,
+                row.y.max(0) as usize,
+                row.width as usize,
+                row.height as usize,
+                row_bg,
+            );
+            framebuffer::draw_text_5x7(
+                (row.x + 8).max(0) as usize,
+                (row.y + 8).max(0) as usize,
+                *label,
+                0xDDE7F3,
+            );
+
+            let dec = self.clock_panel_adjust_button_rect(idx, false);
+            framebuffer::rect(
+                dec.x.max(0) as usize,
+                dec.y.max(0) as usize,
+                dec.width as usize,
+                dec.height as usize,
+                0x374151,
+            );
+            framebuffer::rect(dec.x.max(0) as usize, dec.y.max(0) as usize, dec.width as usize, 1, 0x6B7280);
+            framebuffer::draw_text_5x7(
+                (dec.x + 9).max(0) as usize,
+                (dec.y + 7).max(0) as usize,
+                "-",
+                0xFFFFFF,
+            );
+
+            framebuffer::draw_text_5x7(
+                (row.x + 150).max(0) as usize,
+                (row.y + 8).max(0) as usize,
+                value.as_str(),
+                0xF8FAFC,
+            );
+
+            let inc = self.clock_panel_adjust_button_rect(idx, true);
+            framebuffer::rect(
+                inc.x.max(0) as usize,
+                inc.y.max(0) as usize,
+                inc.width as usize,
+                inc.height as usize,
+                0x315A7A,
+            );
+            framebuffer::rect(inc.x.max(0) as usize, inc.y.max(0) as usize, inc.width as usize, 1, 0x93C5FD);
+            framebuffer::draw_text_5x7(
+                (inc.x + 8).max(0) as usize,
+                (inc.y + 7).max(0) as usize,
+                "+",
+                0xFFFFFF,
+            );
+        }
+
+        let buttons = [
+            (self.clock_panel_mexico_button_rect(), "Mexico", 0x1E4D3A, 0xDFFFEF),
+            (self.clock_panel_rtc_button_rect(), "RTC", 0x2F4054, 0xEAF4FF),
+            (self.clock_panel_close_button_rect(), "Cerrar", 0x5A2F2F, 0xFFEDED),
+        ];
+        for (rect, label, bg, fg) in buttons.iter() {
+            framebuffer::rect(
+                rect.x.max(0) as usize,
+                rect.y.max(0) as usize,
+                rect.width as usize,
+                rect.height as usize,
+                *bg,
+            );
+            framebuffer::rect(rect.x.max(0) as usize, rect.y.max(0) as usize, rect.width as usize, 1, 0x7C8FA6);
+            framebuffer::draw_text_5x7(
+                (rect.x + 8).max(0) as usize,
+                (rect.y + 8).max(0) as usize,
+                *label,
+                *fg,
+            );
+        }
+    }
+
     fn draw_explorer_context_menu_overlay(&mut self) {
         let Some(menu) = self.explorer_context_menu.as_ref() else {
             return;
@@ -19612,10 +20517,7 @@ impl Compositor {
         );
 
         let item_count = self.explorer_context_menu_item_count(menu);
-        let is_trash_dir = {
-            let fat = unsafe { &mut crate::fat32::GLOBAL_FAT };
-            fat.resolve_path(fat.root_cluster, "TRASH/").map(|(_, c)| c).unwrap_or(0) == menu.source_dir_cluster && menu.source_dir_cluster >= 2
-        };
+        let is_trash_dir = menu.is_trash_dir;
 
         for idx in 0..item_count {
             let item_rect = self.explorer_context_menu_item_rect(menu, idx);
@@ -20251,12 +21153,14 @@ impl Compositor {
                     ExplorerContextMenuKind::FileItem
                 };
                 let show_paste = self.explorer_clipboard.is_some();
+                let is_trash_dir = Self::explorer_source_is_trash_dir(source_dir_cluster);
                 let mut item_count = Self::explorer_context_item_count_for_kind(
                     kind,
                     Some(&item),
                     Some(source_path.as_str()),
                     source_dir_cluster,
                     selection_count,
+                    is_trash_dir,
                 );
                 if show_paste {
                     item_count += 1;
@@ -20272,6 +21176,8 @@ impl Compositor {
                     target_item: Some(item),
                     show_paste,
                     selection_count,
+                    item_count,
+                    is_trash_dir,
                     target_app_command: None,
                 });
                 return true;
@@ -20284,6 +21190,7 @@ impl Compositor {
             self.explorer_clear_selection_scope(win_id, source_dir_cluster);
             let show_paste = self.explorer_clipboard.is_some();
             let item_count = if show_paste { 3 } else { 2 };
+            let is_trash_dir = Self::explorer_source_is_trash_dir(source_dir_cluster);
             let (menu_x, menu_y) =
                 self.clamp_explorer_context_menu_origin(mouse_x, mouse_y, item_count);
             self.explorer_context_menu = Some(ExplorerContextMenuState {
@@ -20295,6 +21202,8 @@ impl Compositor {
                 target_item: None,
                 show_paste,
                 selection_count: 0,
+                item_count,
+                is_trash_dir,
                 target_app_command: None,
             });
             return true;
@@ -20341,6 +21250,7 @@ impl Compositor {
                                 None,
                                 0,
                                 1,
+                                false,
                             );
                             let (menu_x, menu_y) =
                                 self.clamp_explorer_context_menu_origin(mouse_x, mouse_y, app_count);
@@ -20353,6 +21263,8 @@ impl Compositor {
                                 target_item: None,
                                 show_paste: false,
                                 selection_count: 1,
+                                item_count: app_count,
+                                is_trash_dir: false,
                                 target_app_command: Some(shortcut.command),
                             });
                             // Store the shortcut label too? We can use target_app_command for now or add label.
@@ -20386,6 +21298,7 @@ impl Compositor {
                             None,
                             0,
                             1,
+                            false,
                         );
                         let (menu_x, menu_y) =
                             self.clamp_explorer_context_menu_origin(mouse_x, mouse_y, app_count);
@@ -20398,6 +21311,8 @@ impl Compositor {
                             target_item: Some(ExplorerItem::new(label, ExplorerItemKind::File, 0, 0)),
                             show_paste: false,
                             selection_count: 1,
+                            item_count: app_count,
+                            is_trash_dir: false,
                             target_app_command: Some(String::from(command)),
                         });
                         return;
@@ -20522,10 +21437,7 @@ impl Compositor {
 
             self.explorer_context_menu = None;
 
-            let is_trash_dir = {
-                let fat = unsafe { &mut crate::fat32::GLOBAL_FAT };
-                fat.resolve_path(fat.root_cluster, "TRASH/").map(|(_, c)| c).unwrap_or(0) == menu.source_dir_cluster && menu.source_dir_cluster >= 2
-            };
+            let is_trash_dir = menu.is_trash_dir;
 
             if is_trash_dir && idx == 0 {
                 // Handle "Restaurar"
@@ -21053,8 +21965,17 @@ impl Compositor {
                                 .map(|i| i.label.clone())
                                 .unwrap_or_else(|| String::from("App"));
 
-                            match self.resolve_desktop_directory_target(true) {
-                                Ok((desktop_cluster, _desktop_path)) => {
+                            match self.resolve_desktop_directory_target_with_index(true) {
+                                Ok((desktop_cluster, _desktop_path, desktop_device_index)) => {
+                                    if let Err(err) =
+                                        self.force_mount_volume_index_for_write(desktop_device_index)
+                                    {
+                                        self.desktop_surface_status = alloc::format!(
+                                            "No se pudo abrir Desktop/: {}",
+                                            err
+                                        );
+                                        return true;
+                                    }
                                     let (shortcut_name, result) = {
                                         let fat = unsafe { &mut crate::fat32::GLOBAL_FAT };
                                         let shortcut_name = Self::desktop_unique_shortcut_name(
@@ -21071,7 +21992,7 @@ impl Compositor {
                                     };
                                     match result {
                                         Ok(_) => {
-                                            if let Some((_, _, items)) = self.desktop_surface_items() {
+                                            if let Some((_, _, _, items)) = self.desktop_surface_items() {
                                                 if let Some(created_item) = items
                                                     .iter()
                                                     .find(|item| {
@@ -21124,20 +22045,21 @@ impl Compositor {
                 match menu.kind {
                     ExplorerContextMenuKind::FileItem | ExplorerContextMenuKind::DirectoryItem => {
                         if let Some(item) = menu.target_item.as_ref() {
-                            let source_path = self
+                            let source_info = self
                                 .desktop_surface_items()
-                                .and_then(|(cluster, path, _)| {
+                                .and_then(|(cluster, path, device_index, _items)| {
                                     if cluster == menu.source_dir_cluster {
-                                        Some(path)
+                                        Some((path, Some(device_index)))
                                     } else {
                                         None
                                     }
-                                })
-                                .unwrap_or_else(|| String::from("/"));
+                                });
+                            let (source_path, source_device_index) = source_info
+                                .unwrap_or_else(|| (String::from("/"), self.current_volume_device_index));
                             if let Some(command) = self.shortcut_command_for_item(
                                 menu.source_dir_cluster,
                                 source_path.as_str(),
-                                self.current_volume_device_index,
+                                source_device_index,
                                 item,
                             ) {
                                 self.desktop_surface_status = match self.save_favorite_shortcut(
@@ -21198,6 +22120,8 @@ impl Compositor {
                             use crate::gui::widgets::taskbar::*;
                             let kind = if Self::is_audio_file_name(item.label.as_str()) {
                                 PinnedItemKind::Audio
+                            } else if Self::is_video_file_name(item.label.as_str()) {
+                                PinnedItemKind::Video
                             } else if Self::is_png_file_name(item.label.as_str()) {
                                 PinnedItemKind::Image
                             } else {
@@ -21280,7 +22204,9 @@ impl Compositor {
         source_dir_cluster: u32,
         clicked_item: &ExplorerItem,
     ) -> Vec<ExplorerItem> {
-        let Some((dir_cluster, _dir_path, items)) = self.desktop_surface_items() else {
+        let Some((dir_cluster, _dir_path, _dir_device_index, items)) =
+            self.desktop_surface_items()
+        else {
             return vec![clicked_item.clone()];
         };
         if dir_cluster != source_dir_cluster {
@@ -21313,21 +22239,19 @@ impl Compositor {
         }
 
         let mut clip_items = Vec::new();
-        let source_dir_path = self
+        let desktop_source = self
             .desktop_surface_items()
-            .and_then(|(cluster, path, _)| {
+            .and_then(|(cluster, path, device_index, _items)| {
                 if cluster == source_dir_cluster {
-                    Some(path)
+                    Some((path, device_index))
                 } else {
                     None
                 }
-            })
-            .unwrap_or_default();
-        let source_device_index = self.resolve_device_index_for_directory(
-            source_dir_cluster,
-            Some(source_dir_path.as_str()),
-            self.current_volume_device_index,
-        );
+            });
+        let (source_dir_path, source_device_index) = match desktop_source {
+            Some((path, device_index)) => (path, Some(device_index)),
+            None => (String::new(), self.current_volume_device_index),
+        };
         for item in items.iter() {
             if !item.is_file() && item.kind != ExplorerItemKind::Directory {
                 continue;
@@ -21374,6 +22298,16 @@ impl Compositor {
         if items.is_empty() {
             self.desktop_surface_status = String::from("No hay elementos para eliminar.");
             return;
+        }
+
+        if let Some((dir_cluster, _path, device_index, _items)) = self.desktop_surface_items() {
+            if dir_cluster == source_dir_cluster {
+                if let Err(err) = self.force_mount_volume_index_for_write(device_index) {
+                    self.desktop_surface_status =
+                        alloc::format!("Eliminar cancelado: {}", err);
+                    return;
+                }
+            }
         }
 
         let mut files = Vec::new();
@@ -21546,7 +22480,7 @@ impl Compositor {
                         continue;
                     }
                 };
-                let source_name = Self::dir_entry_short_name(&source_entry);
+                let source_name = Self::dir_entry_fs_name(fat, &source_entry);
                 fat.ensure_subdirectory(fat.root_cluster, "TRASH");
                 let trash_cluster = fat.resolve_path(fat.root_cluster, "TRASH/").map(|(_, c)| c).unwrap_or(0);
                 if trash_cluster >= 2 {
@@ -21596,7 +22530,7 @@ impl Compositor {
                         continue;
                     }
                 };
-                let source_name = Self::dir_entry_short_name(&source_entry);
+                let source_name = Self::dir_entry_fs_name(fat, &source_entry);
                 fat.ensure_subdirectory(fat.root_cluster, "TRASH");
                 let trash_cluster = fat.resolve_path(fat.root_cluster, "TRASH/").map(|(_, c)| c).unwrap_or(0);
                 if trash_cluster >= 2 {
@@ -21722,9 +22656,7 @@ impl Compositor {
         }
 
         if let Some(label_hint) = Self::path_volume_label_hint(item.source_dir_path.as_str()) {
-            let mounted_label =
-                Self::volume_label_text(&fat).unwrap_or(alloc::format!("VOL{}", index));
-            if !mounted_label.eq_ignore_ascii_case(label_hint) {
+            if !Self::path_head_matches_mounted_volume(&fat, index, label_hint) {
                 return false;
             }
         }
@@ -21786,9 +22718,7 @@ impl Compositor {
         }
 
         if let Some(label_hint) = path_hint.and_then(Self::path_volume_label_hint) {
-            let mounted_label =
-                Self::volume_label_text(&fat).unwrap_or(alloc::format!("VOL{}", index));
-            if !mounted_label.eq_ignore_ascii_case(label_hint) {
+            if !Self::path_head_matches_mounted_volume(&fat, index, label_hint) {
                 return false;
             }
         }
@@ -21837,6 +22767,20 @@ impl Compositor {
         }
 
         out
+    }
+
+    fn dir_entry_fs_name(
+        fat: &crate::fat32::Fat32,
+        entry: &crate::fs::DirEntry,
+    ) -> String {
+        if fat.mounted_fs == crate::fat32::DetectedFsKind::ExFat {
+            let full = entry.full_name();
+            if !full.trim().is_empty() {
+                return full;
+            }
+        }
+
+        Self::dir_entry_short_name(entry)
     }
 
     fn dir_entry_target_name(entry: &crate::fs::DirEntry, label_hint: &str) -> String {
@@ -21982,14 +22926,12 @@ impl Compositor {
             return Some(fat.root_cluster);
         }
 
-        if let Some(label) = Self::volume_label_text(fat) {
-            if components
-                .first()
-                .map(|head| Self::path_head_matches_volume_label(head, label.as_str()))
-                .unwrap_or(false)
-            {
-                components.remove(0);
-            }
+        if components
+            .first()
+            .map(|head| Self::path_head_matches_mounted_volume_alias(fat, head))
+            .unwrap_or(false)
+        {
+            components.remove(0);
         }
 
         let mut cluster = fat.root_cluster;
@@ -22112,6 +23054,7 @@ impl Compositor {
                 dst_name
             ));
         }
+        Self::ensure_fat32_write_target(fat)?;
 
         let file_units = src_size.max(1);
 
@@ -22158,6 +23101,11 @@ impl Compositor {
             }
         }
 
+        if src_size > COPY_BUFFERED_FALLBACK_MAX_BYTES {
+            return Err(String::from(
+                "copia grande requiere streaming: monta el volumen por indice y vuelve a intentar.",
+            ));
+        }
         let mut raw = Self::try_alloc_zeroed(src_size).map_err(String::from)?;
         let read_units_target = file_units / 2;
         let write_units_target = file_units.saturating_sub(read_units_target);
@@ -22238,6 +23186,7 @@ impl Compositor {
                 dst_name
             ));
         }
+        Self::ensure_fat32_write_target(dst_fat)?;
 
         let file_units = src_size.max(1);
         let mut units_reported = 0usize;
@@ -22295,6 +23244,7 @@ impl Compositor {
                 dst_name
             ));
         }
+        Self::ensure_fat32_write_target(fat)?;
 
         // Prefer the same streaming engine used in cross-device copies by mounting
         // a source FAT handle on the same device. This avoids large full-file RAM
@@ -22345,6 +23295,11 @@ impl Compositor {
         }
 
         // Fallback path if source mirror mount is unavailable.
+        if src_size > COPY_BUFFERED_FALLBACK_MAX_BYTES {
+            return Err(String::from(
+                "copia grande requiere streaming: monta el volumen por indice y vuelve a intentar.",
+            ));
+        }
         let mut raw = Self::try_alloc_zeroed(src_size).map_err(String::from)?;
         let file_units = src_size.max(1);
         let read_units_target = file_units / 2;
@@ -22428,6 +23383,7 @@ impl Compositor {
                 dst_name
             ));
         }
+        Self::ensure_fat32_write_target(dst_fat)?;
 
         let file_units = src_size.max(1);
         let mut units_reported = 0usize;
@@ -22478,6 +23434,7 @@ impl Compositor {
     ) -> Result<(usize, usize, usize), String> {
         use crate::fs::FileType;
 
+        Self::ensure_fat32_write_target(fat)?;
         self.copy_progress_abort_if_cancelled()?;
         let entries = fat
             .read_dir_entries(src_dir_cluster)
@@ -22492,8 +23449,8 @@ impl Compositor {
             if !entry.valid {
                 continue;
             }
-            let short_name = Self::dir_entry_short_name(entry);
-            if short_name == "." || short_name == ".." {
+            let entry_name = Self::dir_entry_fs_name(fat, entry);
+            if entry_name == "." || entry_name == ".." {
                 continue;
             }
 
@@ -22503,7 +23460,7 @@ impl Compositor {
                     entry.cluster,
                     entry.size as usize,
                     dst_dir_cluster,
-                    short_name.as_str(),
+                    entry_name.as_str(),
                 )?;
                 files = files.saturating_add(1);
                 bytes = bytes.saturating_add(read_len);
@@ -22511,10 +23468,10 @@ impl Compositor {
             }
 
             if entry.file_type == FileType::Directory {
-                self.copy_progress_touch(alloc::format!("Creando carpeta {}", short_name).as_str());
+                self.copy_progress_touch(alloc::format!("Creando carpeta {}", entry_name).as_str());
                 let child_dst = fat
-                    .ensure_subdirectory(dst_dir_cluster, short_name.as_str())
-                    .map_err(|e| alloc::format!("no se pudo crear carpeta '{}': {}", short_name, e))?;
+                    .ensure_subdirectory(dst_dir_cluster, entry_name.as_str())
+                    .map_err(|e| alloc::format!("no se pudo crear carpeta '{}': {}", entry_name, e))?;
                 self.copy_progress_sync(None, 1, 1, false);
                 dirs = dirs.saturating_add(1);
                 let (f, d, b) = self.copy_directory_tree_same_device(fat, entry.cluster, child_dst)?;
@@ -22536,6 +23493,7 @@ impl Compositor {
     ) -> Result<(usize, usize, usize), String> {
         use crate::fs::FileType;
 
+        Self::ensure_fat32_write_target(dst_fat)?;
         self.copy_progress_abort_if_cancelled()?;
         let entries = src_fat
             .read_dir_entries(src_dir_cluster)
@@ -22550,8 +23508,8 @@ impl Compositor {
             if !entry.valid {
                 continue;
             }
-            let short_name = Self::dir_entry_short_name(entry);
-            if short_name == "." || short_name == ".." {
+            let target_name = Self::dir_entry_fs_name(dst_fat, entry);
+            if target_name == "." || target_name == ".." {
                 continue;
             }
 
@@ -22562,7 +23520,7 @@ impl Compositor {
                     entry.size as usize,
                     dst_fat,
                     dst_dir_cluster,
-                    short_name.as_str(),
+                    target_name.as_str(),
                 )?;
                 files = files.saturating_add(1);
                 bytes = bytes.saturating_add(read_len);
@@ -22570,10 +23528,10 @@ impl Compositor {
             }
 
             if entry.file_type == FileType::Directory {
-                self.copy_progress_touch(alloc::format!("Creando carpeta {}", short_name).as_str());
+                self.copy_progress_touch(alloc::format!("Creando carpeta {}", target_name).as_str());
                 let child_dst = dst_fat
-                    .ensure_subdirectory(dst_dir_cluster, short_name.as_str())
-                    .map_err(|e| alloc::format!("no se pudo crear carpeta '{}': {}", short_name, e))?;
+                    .ensure_subdirectory(dst_dir_cluster, target_name.as_str())
+                    .map_err(|e| alloc::format!("no se pudo crear carpeta '{}': {}", target_name, e))?;
                 self.copy_progress_sync(None, 1, 1, false);
                 dirs = dirs.saturating_add(1);
                 let (f, d, b) =
@@ -22604,7 +23562,7 @@ impl Compositor {
             if !entry.valid {
                 continue;
             }
-            let child_name = Self::dir_entry_short_name(entry);
+            let child_name = Self::dir_entry_fs_name(fat, entry);
             if child_name == "." || child_name == ".." {
                 continue;
             }
@@ -22836,6 +23794,16 @@ impl Compositor {
         status: &str,
         skip_win_id: Option<usize>,
     ) {
+        self.refresh_explorer_windows_for_cluster_on_device(cluster, status, skip_win_id, None);
+    }
+
+    fn refresh_explorer_windows_for_cluster_on_device(
+        &mut self,
+        cluster: u32,
+        status: &str,
+        skip_win_id: Option<usize>,
+        device_index: Option<usize>,
+    ) {
         let mut refresh = Vec::new();
         for win in self.windows.iter() {
             if !win.is_explorer() {
@@ -22844,13 +23812,24 @@ impl Compositor {
             if skip_win_id == Some(win.id) {
                 continue;
             }
+            if let Some(index) = device_index {
+                if win.explorer_device_index != Some(index) {
+                    continue;
+                }
+            }
             if win.explorer_current_cluster == cluster {
-                refresh.push((win.id, win.explorer_path.clone()));
+                refresh.push((win.id, win.explorer_path.clone(), win.explorer_device_index));
             }
         }
 
-        for (id, path) in refresh.into_iter() {
-            self.show_explorer_directory(id, cluster, path, String::from(status), None);
+        for (id, path, win_device_index) in refresh.into_iter() {
+            self.show_explorer_directory(
+                id,
+                cluster,
+                path,
+                String::from(status),
+                device_index.or(win_device_index),
+            );
         }
     }
 
@@ -22874,6 +23853,11 @@ impl Compositor {
             (source_device_index, dst_device_index),
             (Some(src), Some(dst)) if src != dst
         );
+
+        let dst_device_index =
+            dst_device_index.ok_or_else(|| String::from("Pegar cancelado: destino sin indice de unidad"))?;
+        self.force_mount_volume_index_for_write(dst_device_index)
+            .map_err(|e| alloc::format!("Pegar cancelado: {}", e))?;
 
         if !cross_device && clip.source_is_directory && clip.source_item_cluster >= 2 {
             let fat = unsafe { &mut crate::fat32::GLOBAL_FAT };
@@ -22906,10 +23890,10 @@ impl Compositor {
                         source_dir_cluster,
                         clip.source_label.as_str(),
                         clip.source_item_cluster,
-                    )
-                    .map_err(String::from)?;
+                )
+                .map_err(String::from)?;
 
-                    let source_short_name = Self::dir_entry_short_name(&source_entry);
+                    let source_fs_name = Self::dir_entry_fs_name(&src_fat, &source_entry);
                     let source_name_for_target =
                         Self::dir_entry_target_name(&source_entry, clip.source_label.as_str());
                     let dst_fat = unsafe { &mut crate::fat32::GLOBAL_FAT };
@@ -22944,7 +23928,7 @@ impl Compositor {
                         match self.remove_directory_tree_in_dir_with_progress(
                             &mut src_fat,
                             source_dir_cluster,
-                            source_short_name.as_str(),
+                            source_fs_name.as_str(),
                             source_entry.cluster,
                         ) {
                             Ok(()) => cut_done = true,
@@ -22977,7 +23961,7 @@ impl Compositor {
                 )
                 .map_err(String::from)?;
 
-                let source_short_name = Self::dir_entry_short_name(&source_entry);
+                let source_fs_name = Self::dir_entry_fs_name(&src_fat, &source_entry);
                 let source_name_for_target =
                     Self::dir_entry_target_name(&source_entry, clip.source_label.as_str());
                 let dst_fat = unsafe { &mut crate::fat32::GLOBAL_FAT };
@@ -23005,9 +23989,9 @@ impl Compositor {
                 let mut warning = None;
                 if clip.mode == ExplorerClipboardMode::Cut {
                     self.copy_progress_touch(
-                        alloc::format!("Eliminando origen {}", source_short_name).as_str(),
+                        alloc::format!("Eliminando origen {}", source_fs_name).as_str(),
                     );
-                    match src_fat.delete_file_in_dir(source_dir_cluster, source_short_name.as_str()) {
+                    match src_fat.delete_file_in_dir(source_dir_cluster, source_fs_name.as_str()) {
                         Ok(()) => cut_done = true,
                         Err(e) => {
                             warning = Some(alloc::format!(
@@ -23048,7 +24032,7 @@ impl Compositor {
                         return Err(String::from("no puedes pegar una carpeta dentro de si misma."));
                     }
 
-                    let source_short_name = Self::dir_entry_short_name(&source_entry);
+                    let source_fs_name = Self::dir_entry_fs_name(fat, &source_entry);
                     let source_name_for_target =
                         Self::dir_entry_target_name(&source_entry, clip.source_label.as_str());
                     let target_name = if clip.mode == ExplorerClipboardMode::Copy {
@@ -23082,7 +24066,7 @@ impl Compositor {
                         match self.remove_directory_tree_in_dir_with_progress(
                             fat,
                             source_dir_cluster,
-                            source_short_name.as_str(),
+                            source_fs_name.as_str(),
                             source_entry.cluster,
                         ) {
                             Ok(()) => cut_done = true,
@@ -23115,7 +24099,7 @@ impl Compositor {
                 )
                 .map_err(String::from)?;
 
-                let source_short_name = Self::dir_entry_short_name(&source_entry);
+                let source_fs_name = Self::dir_entry_fs_name(fat, &source_entry);
                 let source_name_for_target =
                     Self::dir_entry_target_name(&source_entry, clip.source_label.as_str());
                 let target_name = if clip.mode == ExplorerClipboardMode::Copy {
@@ -23141,9 +24125,9 @@ impl Compositor {
                 let mut warning = None;
                 if clip.mode == ExplorerClipboardMode::Cut {
                     self.copy_progress_touch(
-                        alloc::format!("Eliminando origen {}", source_short_name).as_str(),
+                        alloc::format!("Eliminando origen {}", source_fs_name).as_str(),
                     );
-                    match fat.delete_file_in_dir(source_dir_cluster, source_short_name.as_str()) {
+                    match fat.delete_file_in_dir(source_dir_cluster, source_fs_name.as_str()) {
                         Ok(()) => cut_done = true,
                         Err(e) => {
                             warning = Some(alloc::format!(
@@ -23189,8 +24173,10 @@ impl Compositor {
     }
 
     fn finalize_clipboard_paste_job(&mut self, job: ClipboardPasteJob, cancelled: bool) {
+        let previous_volume = self.current_volume_device_index;
         match job.target {
             ClipboardPasteTarget::ExplorerWindow(win_id) => {
+                self.current_volume_device_index = Some(job.dst_device_index);
                 if cancelled {
                     let status = if job.ok_count > 0 {
                         alloc::format!(
@@ -23208,6 +24194,7 @@ impl Compositor {
                         status,
                         Some(job.dst_device_index),
                     );
+                    self.restore_compositor_mount_after_io(previous_volume);
                     return;
                 }
 
@@ -23223,6 +24210,7 @@ impl Compositor {
                                 .as_str(),
                         );
                     }
+                    self.restore_compositor_mount_after_io(previous_volume);
                     return;
                 }
 
@@ -23254,8 +24242,10 @@ impl Compositor {
                         );
                     }
                 }
+                self.restore_compositor_mount_after_io(previous_volume);
             }
             ClipboardPasteTarget::Desktop => {
+                self.current_volume_device_index = Some(job.dst_device_index);
                 if cancelled {
                     self.desktop_surface_status = if job.ok_count > 0 {
                         alloc::format!(
@@ -23266,16 +24256,19 @@ impl Compositor {
                     } else {
                         String::from("Operacion cancelada por usuario.")
                     };
-                    self.refresh_explorer_windows_for_cluster(
+                    self.refresh_explorer_windows_for_cluster_on_device(
                         job.dst_dir_cluster,
                         "Desktop parcialmente actualizado.",
                         None,
+                        Some(job.dst_device_index),
                     );
+                    self.restore_compositor_mount_after_io(previous_volume);
                     return;
                 }
 
                 if job.ok_count == 0 && job.err_count > 0 {
                     self.desktop_surface_status = String::from("Pegar error: no se pudo completar.");
+                    self.restore_compositor_mount_after_io(previous_volume);
                     return;
                 }
 
@@ -23289,10 +24282,12 @@ impl Compositor {
                             job.err_count
                         )
                     };
-                self.refresh_explorer_windows_for_cluster(
+                self.invalidate_desktop_surface_cache();
+                self.refresh_explorer_windows_for_cluster_on_device(
                     job.dst_dir_cluster,
                     "Desktop actualizado.",
                     None,
+                    Some(job.dst_device_index),
                 );
 
                 if job.clip.mode == ExplorerClipboardMode::Cut && job.cut_all_done {
@@ -23305,6 +24300,7 @@ impl Compositor {
                         );
                     }
                 }
+                self.restore_compositor_mount_after_io(previous_volume);
             }
         }
     }
@@ -23331,6 +24327,9 @@ impl Compositor {
                 let job = unsafe { Box::from_raw(worker.job_ptr) };
                 let cancelled = progress.cancelled();
                 let task = job.task;
+                if let Some(guard) = worker.io_mode_guard.take() {
+                    guard.restore();
+                }
                 self.finish_copy_progress_prompt();
                 self.clipboard_paste_job_busy = false;
                 self.clipboard_paste_waiting_heap = false;
@@ -23389,13 +24388,15 @@ impl Compositor {
         self.clipboard_paste_waiting_heap = false;
         self.clipboard_paste_heap_target_bytes = heap_target;
 
-        let ap_allowed =
-            crate::smp::aps_online() > 0 && !crate::runtime::runtime_uefi_active();
+        let ap_allowed = COPY_ENABLE_AP_STORAGE_TASKS
+            && crate::smp::aps_online() > 0
+            && !crate::runtime::runtime_uefi_active();
         if ap_allowed {
             let progress = Box::new(CopyProgressShared::new(total_units, total_items));
             let progress_ptr = Box::into_raw(progress);
             let task_job = Box::new(ClipboardPasteTaskJob::new(job, progress_ptr));
             let job_ptr = Box::into_raw(task_job);
+            let mut io_mode_guard = Some(StableIoModeGuard::enter());
             if crate::smp::dispatch_to_any_ap(
                 clipboard_paste_task_worker,
                 job_ptr as *mut core::ffi::c_void,
@@ -23407,9 +24408,13 @@ impl Compositor {
                     progress_ptr,
                     last_units: 0,
                     last_items: 0,
+                    io_mode_guard: io_mode_guard.take(),
                     heap_reservation,
                 });
                 return;
+            }
+            if let Some(guard) = io_mode_guard.take() {
+                guard.restore();
             }
             let job_box = unsafe { Box::from_raw(job_ptr) };
             let _ = unsafe { Box::from_raw(progress_ptr) };
@@ -23417,6 +24422,7 @@ impl Compositor {
         }
 
         self.clipboard_paste_job_busy = true;
+        let mut io_mode_guard = Some(StableIoModeGuard::enter());
         let mut cancelled = self.copy_progress_cancel_requested();
         let (max_items_per_paint, budget_ticks) = self.copy_background_runtime_limits();
         let mut steps = 0usize;
@@ -23461,7 +24467,7 @@ impl Compositor {
             let prev_volume = self.current_volume_device_index;
             self.current_volume_device_index = Some(job.dst_device_index);
             let item_result = self.execute_clipboard_paste_to_directory(&item_clip, job.dst_dir_cluster);
-            self.current_volume_device_index = prev_volume;
+            self.restore_compositor_mount_after_io(prev_volume);
             match item_result {
                 Ok((status, cut_done, cross_device)) => {
                     job.ok_count += 1;
@@ -23511,6 +24517,9 @@ impl Compositor {
             }
         }
 
+        if let Some(guard) = io_mode_guard.take() {
+            guard.restore();
+        }
         let done = cancelled || job.cursor >= job.items.len();
         self.clipboard_paste_job_busy = false;
         if done {
@@ -23564,10 +24573,12 @@ impl Compositor {
             }
             return;
         };
-        if !self.ensure_volume_index_mounted(dst_device_index) {
+        let previous_volume = self.current_volume_device_index;
+        if let Err(err) = self.force_mount_volume_index_for_write(dst_device_index) {
             if let Some(win) = self.windows.iter_mut().find(|w| w.id == win_id) {
-                win.set_explorer_status("Pegar error: no se pudo montar la unidad destino.");
+                win.set_explorer_status(alloc::format!("Pegar cancelado: {}", err).as_str());
             }
+            self.restore_compositor_mount_after_io(previous_volume);
             return;
         }
 
@@ -23598,6 +24609,7 @@ impl Compositor {
         if let Some(win) = self.windows.iter_mut().find(|w| w.id == win_id) {
             win.set_explorer_status("Pegar: tarea iniciada en segundo plano.");
         }
+        self.restore_compositor_mount_after_io(previous_volume);
     }
 
     fn paste_clipboard_to_desktop(&mut self) {
@@ -23616,25 +24628,18 @@ impl Compositor {
             return;
         };
 
-        let (desktop_cluster, desktop_path) = match self.resolve_desktop_directory_target(true) {
+        let (desktop_cluster, desktop_path, desktop_device_index) =
+            match self.resolve_desktop_directory_target_with_index(true) {
             Ok(v) => v,
             Err(err) => {
                 self.desktop_surface_status = err;
                 return;
             }
         };
-        let Some(desktop_device_index) = self.resolve_device_index_for_directory(
-            desktop_cluster,
-            Some(desktop_path.as_str()),
-            self.current_volume_device_index,
-        ) else {
-            self.desktop_surface_status =
-                String::from("Pegar error: no se pudo ubicar la unidad destino.");
-            return;
-        };
-        if !self.ensure_volume_index_mounted(desktop_device_index) {
-            self.desktop_surface_status =
-                String::from("Pegar error: no se pudo montar la unidad destino.");
+        let previous_volume = self.current_volume_device_index;
+        if let Err(err) = self.force_mount_volume_index_for_write(desktop_device_index) {
+            self.desktop_surface_status = alloc::format!("Pegar cancelado: {}", err);
+            self.restore_compositor_mount_after_io(previous_volume);
             return;
         }
 
@@ -23663,6 +24668,7 @@ impl Compositor {
             first_status: String::new(),
         });
         self.desktop_surface_status = String::from("Pegar: tarea iniciada en segundo plano.");
+        self.restore_compositor_mount_after_io(previous_volume);
     }
 
     fn delete_explorer_file(
@@ -23700,7 +24706,7 @@ impl Compositor {
                 }
             };
 
-            let source_name = Self::dir_entry_short_name(&source_entry);
+            let source_name = Self::dir_entry_fs_name(fat, &source_entry);
             fat.ensure_subdirectory(fat.root_cluster, "TRASH");
             let trash_cluster = fat.resolve_path(fat.root_cluster, "TRASH/").map(|(_, c)| c).unwrap_or(0);
             let res = if trash_cluster >= 2 {
@@ -23783,7 +24789,7 @@ impl Compositor {
                 }
             };
 
-            let source_name = Self::dir_entry_short_name(&source_entry);
+            let source_name = Self::dir_entry_fs_name(fat, &source_entry);
             fat.ensure_subdirectory(fat.root_cluster, "TRASH");
             let trash_cluster = fat.resolve_path(fat.root_cluster, "TRASH/").map(|(_, c)| c).unwrap_or(0);
             let res = if trash_cluster >= 2 {
@@ -23858,7 +24864,7 @@ impl Compositor {
                 }
             };
 
-            let source_name = Self::dir_entry_short_name(&source_entry);
+            let source_name = Self::dir_entry_fs_name(fat, &source_entry);
             fat.ensure_subdirectory(fat.root_cluster, "TRASH");
             let trash_cluster = fat.resolve_path(fat.root_cluster, "TRASH/").map(|(_, c)| c).unwrap_or(0);
             let res = if trash_cluster >= 2 {
@@ -23890,6 +24896,7 @@ impl Compositor {
         }
 
         self.desktop_surface_status = alloc::format!("Eliminado: {}", deleted_name);
+        self.invalidate_desktop_surface_cache();
         let refresh_note = alloc::format!("Elemento eliminado: {}", deleted_name);
         self.refresh_explorer_windows_for_cluster(source_dir_cluster, refresh_note.as_str(), None);
     }
@@ -23928,7 +24935,7 @@ impl Compositor {
                 }
             };
 
-            let source_name = Self::dir_entry_short_name(&source_entry);
+            let source_name = Self::dir_entry_fs_name(fat, &source_entry);
             fat.ensure_subdirectory(fat.root_cluster, "TRASH");
             let trash_cluster = fat.resolve_path(fat.root_cluster, "TRASH/").map(|(_, c)| c).unwrap_or(0);
             let res = if trash_cluster >= 2 {
@@ -23965,6 +24972,7 @@ impl Compositor {
         }
 
         self.desktop_surface_status = alloc::format!("Carpeta eliminada: {}", deleted_name);
+        self.invalidate_desktop_surface_cache();
         let refresh_note = alloc::format!("Carpeta eliminada: {}", deleted_name);
         self.refresh_explorer_windows_for_cluster(source_dir_cluster, refresh_note.as_str(), None);
     }
@@ -24353,7 +25361,14 @@ impl Compositor {
         self.needs_repaint = true;
     }
 
+    pub fn is_suspended(&self) -> bool {
+        self.is_suspended
+    }
+
     pub fn service_background_tasks(&mut self) {
+        if self.is_suspended {
+            return;
+        }
         // Keep background runtimes advancing even when there is no repaint yet.
         self.service_clipboard_paste_job();
         self.service_install_tasks();
@@ -24365,6 +25380,7 @@ impl Compositor {
         self.service_browser_servort_surface();
         self.service_linux_bridge_window();
         self.service_terminal_streams();
+        self.service_video_player_windows();
         self.service_task_manager_windows();
     }
 
@@ -24392,7 +25408,78 @@ impl Compositor {
         }
     }
 
+    fn enter_soft_suspend(&mut self) {
+        self.is_suspended = true;
+        self.suspend_ignore_mouse_until_release = true;
+        self.taskbar.start_menu_open = false;
+        self.start_tools_open = false;
+        self.start_games_open = false;
+        self.start_apps_open = false;
+        self.pointer_capture = None;
+        self.last_mouse_down = false;
+        self.last_mouse_right_down = false;
+        self.mouse_input_priority_frames = 0;
+        crate::syscall::linux_gfx_bridge_set_direct_present(false);
+        self.needs_repaint = true;
+    }
+
+    fn enter_suspend(&mut self) {
+        self.taskbar.start_menu_open = false;
+        self.start_tools_open = false;
+        self.start_games_open = false;
+        self.start_apps_open = false;
+        self.pointer_capture = None;
+        crate::framebuffer::clear(0x000000);
+        framebuffer::present();
+
+        match crate::acpi::try_suspend_to_ram() {
+            Ok(()) => {
+                let _ = crate::restore_gui_after_s3_resume();
+                self.wake_from_soft_suspend();
+            }
+            Err(_) => {
+                self.enter_soft_suspend();
+            }
+        }
+    }
+
+    fn wake_from_soft_suspend(&mut self) {
+        self.is_suspended = false;
+        self.suspend_ignore_mouse_until_release = false;
+        self.needs_repaint = true;
+    }
+
+    fn suspended_mouse_should_wake(&mut self, m: &super::MouseEvent) -> bool {
+        let moved = m.x != self.mouse_pos.x || m.y != self.mouse_pos.y;
+        let buttons_down = m.left_down || m.right_down;
+        let wheel = m.wheel_delta != 0;
+        self.mouse_pos = Point { x: m.x, y: m.y };
+
+        if self.suspend_ignore_mouse_until_release {
+            if buttons_down {
+                return false;
+            }
+            self.suspend_ignore_mouse_until_release = false;
+            return moved || wheel;
+        }
+
+        moved || buttons_down || wheel
+    }
+
+    fn suspended_event_should_wake(&mut self, event: &Event) -> bool {
+        match event {
+            Event::Keyboard(_) => true,
+            Event::Mouse(m) => self.suspended_mouse_should_wake(m),
+        }
+    }
+
     pub fn handle_event(&mut self, event: Event) {
+        if self.is_suspended {
+            if self.suspended_event_should_wake(&event) {
+                self.wake_from_soft_suspend();
+            }
+            return;
+        }
         self.needs_repaint = true;
         match event {
             Event::Mouse(m) => {
@@ -24440,6 +25527,17 @@ impl Compositor {
                 if self.rename_prompt.is_some() {
                     if is_new_left_click {
                         self.handle_rename_prompt_click(m.x, m.y);
+                    }
+                    return;
+                }
+
+                if self.clock_panel_open {
+                    if is_new_right_click {
+                        self.clock_panel_open = false;
+                        return;
+                    }
+                    if is_new_left_click && self.handle_clock_panel_click(m.x, m.y) {
+                        return;
                     }
                     return;
                 }
@@ -24613,6 +25711,7 @@ impl Compositor {
                         .rect
                         .contains(Point { x: rel_x, y: rel_y })
                     {
+                        self.clock_panel_open = false;
                         self.taskbar.start_menu_open = !self.taskbar.start_menu_open;
                         if self.taskbar.start_menu_open {
                             self.refresh_start_app_shortcuts();
@@ -24708,7 +25807,20 @@ impl Compositor {
                             // Settings icon
                             let settings_start = icons_end + PINNED_ARROW_W + 4;
                             if tray_rel >= settings_start && tray_rel < settings_start + SETTINGS_ICON_W {
+                                self.clock_panel_open = false;
                                 self.open_settings_window();
+                                return;
+                            }
+
+                            let clock_start = settings_start + SETTINGS_ICON_W + 4;
+                            if tray_rel >= clock_start && tray_rel < clock_start + CLOCK_W {
+                                self.clock_panel_open = !self.clock_panel_open;
+                                self.taskbar.start_menu_open = false;
+                                self.start_tools_open = false;
+                                self.start_games_open = false;
+                                self.start_apps_open = false;
+                                self.desktop_switcher_open = false;
+                                self.minimized_overflow_open = false;
                                 return;
                             }
                         }
@@ -24774,6 +25886,14 @@ impl Compositor {
                                 self.start_games_open = false;
                                 self.start_apps_open = false;
                             }
+                            let video_item = self.tools_menu_item_rect(4);
+                            if video_item.contains(self.mouse_pos) {
+                                self.open_video_player_window();
+                                self.taskbar.start_menu_open = false;
+                                self.start_tools_open = false;
+                                self.start_games_open = false;
+                                self.start_apps_open = false;
+                            }
                             return;
                         }
                     }
@@ -24830,7 +25950,9 @@ impl Compositor {
                         let tools_item = self.start_menu_item_rect(5);
                         let games_item = self.start_menu_item_rect(6);
                         let apps_item = self.start_menu_item_rect(7);
-                        let shutdown_item = self.start_menu_item_rect(8);
+                        let suspend_item = self.start_menu_item_rect(8);
+                        let shutdown_item = self.start_menu_item_rect(9);
+                        let restart_item = self.start_menu_item_rect(10);
 
                         if search_item.contains(self.mouse_pos) {
                             self.open_search_from_start();
@@ -24875,8 +25997,12 @@ impl Compositor {
                             self.start_apps_open = !self.start_apps_open;
                             self.start_tools_open = false;
                             self.start_games_open = false;
+                        } else if suspend_item.contains(self.mouse_pos) {
+                            self.enter_suspend();
                         } else if shutdown_item.contains(self.mouse_pos) {
                             uefi::runtime::reset(ResetType::SHUTDOWN, Status::SUCCESS, None);
+                        } else if restart_item.contains(self.mouse_pos) {
+                            uefi::runtime::reset(ResetType::COLD, Status::SUCCESS, None);
                         }
                         return;
                     }
@@ -24952,6 +26078,7 @@ impl Compositor {
                         self.handle_ide_studio_click(win_id, self.mouse_pos.x, self.mouse_pos.y);
                         self.handle_settings_click(win_id, self.mouse_pos.x, self.mouse_pos.y);
                         self.handle_wifi_manager_click(win_id, self.mouse_pos.x, self.mouse_pos.y);
+                        self.handle_video_player_click(win_id, self.mouse_pos.x, self.mouse_pos.y);
                         if self.handle_task_manager_click(win_id, self.mouse_pos.x, self.mouse_pos.y) {
                             return;
                         }
@@ -24981,6 +26108,13 @@ impl Compositor {
                     return;
                 }
                 if self.handle_notepad_save_prompt_key(k.key, k.special, k.down) {
+                    return;
+                }
+
+                if self.clock_panel_open {
+                    if k.down && matches!(k.key, Some('\x1b')) {
+                        self.clock_panel_open = false;
+                    }
                     return;
                 }
 
@@ -25224,6 +26358,12 @@ impl Compositor {
     }
 
     pub fn paint(&mut self) {
+        if self.is_suspended {
+            crate::framebuffer::clear(0x000000);
+            self.needs_repaint = false;
+            framebuffer::present();
+            return;
+        }
         if self.headless {
             self.needs_repaint = false;
             return;
@@ -25467,7 +26607,22 @@ impl Compositor {
                 0xEFEAFF,
             );
 
-            let shutdown_item = self.start_menu_item_rect(8);
+            let suspend_item = self.start_menu_item_rect(8);
+            framebuffer::rect(
+                suspend_item.x.max(0) as usize,
+                suspend_item.y.max(0) as usize,
+                suspend_item.width as usize,
+                suspend_item.height as usize,
+                0x1A2A3A,
+            );
+            framebuffer::draw_text_5x7(
+                (suspend_item.x + 8).max(0) as usize,
+                (suspend_item.y + 8).max(0) as usize,
+                "Suspender",
+                0xCCCCFF,
+            );
+
+            let shutdown_item = self.start_menu_item_rect(9);
             framebuffer::rect(
                 shutdown_item.x.max(0) as usize,
                 shutdown_item.y.max(0) as usize,
@@ -25480,6 +26635,21 @@ impl Compositor {
                 (shutdown_item.y + 8).max(0) as usize,
                 "Apagar",
                 0xFFDDDD,
+            );
+
+            let restart_item = self.start_menu_item_rect(10);
+            framebuffer::rect(
+                restart_item.x.max(0) as usize,
+                restart_item.y.max(0) as usize,
+                restart_item.width as usize,
+                restart_item.height as usize,
+                0x3A2F1F,
+            );
+            framebuffer::draw_text_5x7(
+                (restart_item.x + 8).max(0) as usize,
+                (restart_item.y + 8).max(0) as usize,
+                "Reiniciar",
+                0xFFEDDD,
             );
 
             if self.start_tools_open {
@@ -25561,6 +26731,21 @@ impl Compositor {
                     (task_item.x + 8).max(0) as usize,
                     (task_item.y + 8).max(0) as usize,
                     "Task Manager",
+                    0xEAF4FF,
+                );
+
+                let video_item = self.tools_menu_item_rect(4);
+                framebuffer::rect(
+                    video_item.x.max(0) as usize,
+                    video_item.y.max(0) as usize,
+                    video_item.width as usize,
+                    video_item.height as usize,
+                    0x222E3A,
+                );
+                framebuffer::draw_text_5x7(
+                    (video_item.x + 8).max(0) as usize,
+                    (video_item.y + 8).max(0) as usize,
+                    "Reproductor Video",
                     0xEAF4FF,
                 );
             }
@@ -25668,6 +26853,7 @@ impl Compositor {
         self.draw_explorer_context_menu_overlay();
         self.draw_ide_context_menu_overlay();
         self.draw_pinned_context_menu_overlay();
+        self.draw_clock_panel_overlay();
         self.draw_desktop_create_folder_prompt();
         self.draw_rename_prompt();
         self.draw_ide_unsaved_prompt();
@@ -25792,6 +26978,7 @@ impl Compositor {
                     PinnedItemKind::Directory => Color(0x2E86C1),
                     PinnedItemKind::App => Color(0x8E44AD),
                     PinnedItemKind::Audio => Color(0xE67E22),
+                    PinnedItemKind::Video => Color(0x9B59B6),
                     PinnedItemKind::Image => Color(0x27AE60),
                     PinnedItemKind::Archive => Color(0xD4AC0D),
                     PinnedItemKind::Executable => Color(0xC0392B),
@@ -25873,23 +27060,34 @@ impl Compositor {
 
         // Clock HH:MM + DD/MM
         {
-            let ticks = crate::timer::ticks();
-            // Approximate: each tick ≈ 1ms (from main loop stall(1000))
-            let total_secs = ticks / 1000;
-            let hours = (total_secs / 3600) % 24;
-            let minutes = (total_secs / 60) % 60;
-            let time_str = alloc::format!("{:02}:{:02}", hours, minutes);
+            let clock_bg = if self.clock_panel_open {
+                Color(0x24384D)
+            } else {
+                Color(0x242424)
+            };
+            let clock_rect = Rect::new(cx, icon_y + 2, CLOCK_W as u32, 34);
+            self.taskbar_window.fill_rect(clock_rect, clock_bg);
+            self.taskbar_window.draw_border(
+                clock_rect,
+                if self.clock_panel_open {
+                    Color(0x6FA8DC)
+                } else {
+                    Color(0x444444)
+                },
+            );
+            let dt = self.current_local_clock_datetime();
+            let time_str = alloc::format!("{:02}:{:02}", dt.hour, dt.minute);
             self.taskbar_window.draw_text(
-                (cx + 4) as u32,
+                (cx + 8) as u32,
                 (icon_y + 10) as u32,
                 time_str.as_bytes(),
                 Color(0xDDDDDD),
             );
-            // Date below (static for now — no RTC)
+            let date_str = alloc::format!("{:02}/{:02}", dt.day, dt.month);
             self.taskbar_window.draw_text(
-                (cx + 4) as u32,
+                (cx + 8) as u32,
                 (icon_y + 24) as u32,
-                b"28/02",
+                date_str.as_bytes(),
                 Color(0x888888),
             );
         }
@@ -26303,6 +27501,21 @@ impl Compositor {
         self.create_task_manager_window("Task Manager", 220, 120, 560, 420);
     }
 
+    fn open_video_player_window(&mut self) {
+        if self
+            .windows
+            .iter()
+            .any(|w| w.kind == WindowKind::VideoPlayer && self.window_on_active_desktop(w))
+        {
+            return;
+        }
+        self.taskbar.start_menu_open = false;
+        self.start_tools_open = false;
+        self.start_games_open = false;
+        self.start_apps_open = false;
+        self.create_video_player_window("Reproductor de Video", 100, 100, 640, 480);
+    }
+
     fn open_pinned_item(&mut self, item: &crate::gui::widgets::taskbar::PinnedItem) {
         use crate::gui::widgets::taskbar::PinnedItemKind;
 
@@ -26358,11 +27571,17 @@ impl Compositor {
                         cluster: item.cluster,
                         size: item.size,
                         kind: ExplorerItemKind::File,
+                        create_date: 0,
+                        create_time: 0,
+                        write_date: 0,
+                        write_time: 0,
                     };
                     self.open_png_from_explorer_file(0, &temp_item);
                 } else if Self::is_audio_file_name(item.label.as_str()) {
                     // Audio file — open in media player
                     self.open_media_player_file(item.cluster, item.label.as_str(), item.size);
+                } else if Self::is_video_file_name(item.label.as_str()) {
+                    self.open_video_player_file(item.cluster, item.label.as_str(), item.size);
                 } else {
                     // Any other file — open in notepad
                     let temp_item = ExplorerItem {
@@ -26370,6 +27589,10 @@ impl Compositor {
                         cluster: item.cluster,
                         size: item.size,
                         kind: ExplorerItemKind::File,
+                        create_date: 0,
+                        create_time: 0,
+                        write_date: 0,
+                        write_time: 0,
                     };
                     let root = unsafe { crate::fat32::GLOBAL_FAT.root_cluster };
                     self.open_notepad_from_explorer_file(root, String::from("/"), &temp_item);
@@ -26570,16 +27793,163 @@ impl Compositor {
             indices.push(index);
         }
     }
-    fn auto_mount_candidate_indices(&self) -> Vec<usize> {
-        let devices = crate::fat32::Fat32::detect_uefi_block_devices();
-        let mut out = Vec::new();
-        let skipped = self.desktop_usb_ejected_device_index;
 
-        // Simplified auto-mount: just avoid the ejected one.
-        // We could also avoid ones that are already in desktop_disk_icons.
+    fn push_data_volume_indices(
+        indices: &mut Vec<usize>,
+        devices: &[crate::fat32::DetectedBlockDevice],
+        skipped: Option<usize>,
+        removable: Option<bool>,
+        logical_partition: Option<bool>,
+    ) {
+        for dev in devices.iter() {
+            if Some(dev.index) == skipped {
+                continue;
+            }
+            if dev.fs_kind != crate::fat32::DetectedFsKind::ExFat {
+                continue;
+            }
+            if removable.map(|want| dev.removable != want).unwrap_or(false) {
+                continue;
+            }
+            if logical_partition
+                .map(|want| dev.logical_partition != want)
+                .unwrap_or(false)
+            {
+                continue;
+            }
+            Self::push_unique_device_index(indices, dev.index);
+        }
+    }
+
+    fn read_install_marker_u64_from_fat(fat: &mut crate::fat32::Fat32, key: &str) -> Option<u64> {
+        let root = fat.root_cluster;
+        let entries = fat.read_dir_entries(root).ok()?;
+        for name in ["ZENOXOS.INI", "GOOS.INI", "REDUXOS.INI"].iter() {
+            for entry in entries.iter() {
+                if !entry.valid || entry.file_type != crate::fs::FileType::File {
+                    continue;
+                }
+                if !(entry.matches_name(*name) || entry.full_name().eq_ignore_ascii_case(*name)) {
+                    continue;
+                }
+
+                let read_size = core::cmp::min(entry.size as usize, 4096);
+                if read_size == 0 {
+                    continue;
+                }
+                let mut raw = alloc::vec![0u8; read_size];
+                let len = fat
+                    .read_file_sized(entry.cluster, read_size, raw.as_mut_slice())
+                    .ok()?;
+                let text = core::str::from_utf8(&raw[..len]).ok()?;
+                for line in text.lines() {
+                    let trimmed = line.trim();
+                    let Some((left, right)) = trimmed.split_once('=') else {
+                        continue;
+                    };
+                    if left.trim().eq_ignore_ascii_case(key) {
+                        return right.trim().parse::<u64>().ok();
+                    }
+                }
+            }
+        }
+
+        None
+    }
+
+    fn boot_install_data_start_lba(&self) -> Option<u64> {
+        let boot_index = crate::fat32::Fat32::boot_block_device_index()?;
+        let mut fat = crate::fat32::Fat32::new();
+        fat.mount_uefi_block_device(boot_index).ok()?;
+        Self::read_install_marker_u64_from_fat(&mut fat, "data_start_lba")
+    }
+
+    fn paired_data_volume_index_from_boot_geometry(
+        &self,
+        devices: &[crate::fat32::DetectedBlockDevice],
+        skipped: Option<usize>,
+    ) -> Option<usize> {
+        let boot_index = crate::fat32::Fat32::boot_block_device_index()?;
+        let boot_dev = devices.iter().find(|dev| dev.index == boot_index)?;
+        if boot_dev.partition_start == 0 {
+            return None;
+        }
+
+        let mut best: Option<(usize, u64)> = None;
+        for dev in devices.iter() {
+            if Some(dev.index) == skipped {
+                continue;
+            }
+            if dev.fs_kind != crate::fat32::DetectedFsKind::ExFat {
+                continue;
+            }
+            if dev.removable != boot_dev.removable {
+                continue;
+            }
+            if dev.partition_start <= boot_dev.partition_start {
+                continue;
+            }
+            let delta = dev.partition_start.saturating_sub(boot_dev.partition_start);
+            match best {
+                Some((_, best_delta)) if best_delta <= delta => {}
+                _ => best = Some((dev.index, delta)),
+            }
+        }
+
+        best.map(|(index, _)| index)
+    }
+
+    fn preferred_data_volume_index(&self) -> Option<usize> {
+        let devices = crate::fat32::Fat32::detect_uefi_block_devices();
+        let skipped = self.desktop_usb_ejected_device_index;
+        let mut out = Vec::new();
+
+        if let Some(data_start_lba) = self.boot_install_data_start_lba() {
+            for dev in devices.iter() {
+                if Some(dev.index) == skipped {
+                    continue;
+                }
+                if dev.fs_kind == crate::fat32::DetectedFsKind::ExFat
+                    && dev.partition_start == data_start_lba
+                {
+                    Self::push_unique_device_index(&mut out, dev.index);
+                }
+            }
+        }
+
+        if let Some(index) = self.paired_data_volume_index_from_boot_geometry(devices.as_slice(), skipped) {
+            Self::push_unique_device_index(&mut out, index);
+        }
+
+        // Installed systems should land on the writable data partition, not the
+        // FAT32 boot partition that loaded BOOTX64.EFI.
+        Self::push_data_volume_indices(&mut out, devices.as_slice(), skipped, Some(false), Some(true));
+        Self::push_data_volume_indices(&mut out, devices.as_slice(), skipped, Some(false), None);
+        Self::push_data_volume_indices(&mut out, devices.as_slice(), skipped, Some(true), Some(true));
+        Self::push_data_volume_indices(&mut out, devices.as_slice(), skipped, Some(true), None);
+        out.get(0).copied()
+    }
+
+    fn build_named_root_candidate_indices(&self) -> Vec<usize> {
+        let devices = crate::fat32::Fat32::detect_uefi_block_devices();
+        let skipped = self.desktop_usb_ejected_device_index;
+        let mut out = Vec::new();
+
+        if let Some(preferred) = self.preferred_data_volume_index() {
+            Self::push_unique_device_index(&mut out, preferred);
+        }
+
+        Self::push_data_volume_indices(&mut out, devices.as_slice(), skipped, Some(false), Some(true));
+        Self::push_data_volume_indices(&mut out, devices.as_slice(), skipped, Some(false), None);
+        Self::push_data_volume_indices(&mut out, devices.as_slice(), skipped, Some(true), Some(true));
+        Self::push_data_volume_indices(&mut out, devices.as_slice(), skipped, Some(true), None);
 
         if let Some(current) = self.current_volume_device_index {
-            if Some(current) != skipped && devices.iter().any(|dev| dev.index == current) {
+            if Some(current) != skipped
+                && devices
+                    .iter()
+                    .any(|dev| dev.index == current && dev.fs_kind.is_mountable())
+            {
                 Self::push_unique_device_index(&mut out, current);
             }
         }
@@ -26588,7 +27958,7 @@ impl Compositor {
             if Some(dev.index) == skipped {
                 continue;
             }
-            if !dev.removable && dev.logical_partition {
+            if !dev.removable && dev.logical_partition && dev.fs_kind.is_mountable() {
                 Self::push_unique_device_index(&mut out, dev.index);
             }
         }
@@ -26597,12 +27967,160 @@ impl Compositor {
             if Some(dev.index) == skipped {
                 continue;
             }
-            if !dev.removable {
+            if !dev.removable && dev.fs_kind.is_mountable() {
+                Self::push_unique_device_index(&mut out, dev.index);
+            }
+        }
+
+        for dev in devices.iter() {
+            if Some(dev.index) == skipped {
+                continue;
+            }
+            if dev.fs_kind.is_mountable() {
                 Self::push_unique_device_index(&mut out, dev.index);
             }
         }
 
         out
+    }
+
+    fn named_root_candidate_indices(&mut self) -> Vec<usize> {
+        let skipped = self.desktop_usb_ejected_device_index;
+        if self.named_root_candidate_cache_valid
+            && self.named_root_candidate_cache_skipped == skipped
+        {
+            return self.named_root_candidate_cache.clone();
+        }
+
+        let candidates = self.build_named_root_candidate_indices();
+        self.named_root_candidate_cache = candidates.clone();
+        self.named_root_candidate_cache_skipped = skipped;
+        self.named_root_candidate_cache_valid = true;
+        candidates
+    }
+
+    fn boot_fat32_candidate_index(
+        &self,
+        devices: &[crate::fat32::DetectedBlockDevice],
+        skipped: Option<usize>,
+    ) -> Option<usize> {
+        let boot_index = crate::fat32::Fat32::boot_block_device_index()?;
+        if Some(boot_index) == skipped {
+            return None;
+        }
+        devices
+            .iter()
+            .find(|dev| dev.index == boot_index && dev.fs_kind.is_mountable_fat32())
+            .map(|dev| dev.index)
+    }
+
+    fn force_mount_boot_fat32_for_compositor(&mut self) -> bool {
+        let devices = crate::fat32::Fat32::detect_uefi_block_devices();
+        let Some(index) =
+            self.boot_fat32_candidate_index(devices.as_slice(), self.desktop_usb_ejected_device_index)
+        else {
+            return false;
+        };
+
+        let already_mounted = self.current_volume_device_index == Some(index)
+            && unsafe { crate::fat32::GLOBAL_FAT.bytes_per_sector != 0 };
+        if already_mounted {
+            return true;
+        }
+
+        let mounted = {
+            let fat = unsafe { &mut crate::fat32::GLOBAL_FAT };
+            fat.mount_uefi_block_device(index).is_ok()
+        };
+        if mounted {
+            self.current_volume_device_index = Some(index);
+        }
+        mounted
+    }
+
+    fn restore_compositor_mount_after_io(&mut self, previous: Option<usize>) {
+        if self.force_mount_boot_fat32_for_compositor() {
+            return;
+        }
+        if let Some(index) = previous {
+            let _ = self.force_mount_volume_index(index);
+        } else {
+            self.current_volume_device_index = None;
+        }
+    }
+
+    fn auto_mount_candidate_indices(&self) -> Vec<usize> {
+        let devices = crate::fat32::Fat32::detect_uefi_block_devices();
+        let mut out = Vec::new();
+        let skipped = self.desktop_usb_ejected_device_index;
+
+        // Simplified auto-mount: just avoid the ejected one.
+        // We could also avoid ones that are already in desktop_disk_icons.
+
+        if let Some(boot_index) = self.boot_fat32_candidate_index(devices.as_slice(), skipped) {
+            Self::push_unique_device_index(&mut out, boot_index);
+        }
+
+        if let Some(current) = self.current_volume_device_index {
+            if Some(current) != skipped
+                && devices
+                    .iter()
+                    .any(|dev| dev.index == current && dev.fs_kind.is_mountable_fat32())
+            {
+                Self::push_unique_device_index(&mut out, current);
+            }
+        }
+
+        for dev in devices.iter() {
+            if Some(dev.index) == skipped {
+                continue;
+            }
+            if !dev.removable && dev.logical_partition && dev.fs_kind.is_mountable_fat32() {
+                Self::push_unique_device_index(&mut out, dev.index);
+            }
+        }
+
+        for dev in devices.iter() {
+            if Some(dev.index) == skipped {
+                continue;
+            }
+            if !dev.removable && dev.fs_kind.is_mountable_fat32() {
+                Self::push_unique_device_index(&mut out, dev.index);
+            }
+        }
+
+        for dev in devices.iter() {
+            if Some(dev.index) == skipped {
+                continue;
+            }
+            if dev.fs_kind.is_mountable_fat32() {
+                Self::push_unique_device_index(&mut out, dev.index);
+            }
+        }
+
+        out
+    }
+
+    fn try_auto_mount_preferred_data_volume(&mut self) -> bool {
+        if self.manual_unmount_lock {
+            return false;
+        }
+        if let Some(current) = self.current_volume_device_index {
+            let devices = crate::fat32::Fat32::detect_uefi_block_devices();
+            if devices
+                .iter()
+                .any(|dev| dev.index == current && dev.fs_kind == crate::fat32::DetectedFsKind::ExFat)
+            {
+                return false;
+            }
+        }
+        let Some(index) = self.preferred_data_volume_index() else {
+            return false;
+        };
+        if self.current_volume_device_index == Some(index) {
+            return false;
+        }
+        self.force_mount_volume_index(index)
     }
 
     fn try_auto_mount_available_volume(&mut self) -> bool {
@@ -26628,6 +28146,10 @@ impl Compositor {
             return true;
         }
 
+        self.force_mount_volume_index(index)
+    }
+
+    fn force_mount_volume_index(&mut self, index: usize) -> bool {
         let mounted = {
             let fat = unsafe { &mut crate::fat32::GLOBAL_FAT };
             fat.mount_uefi_block_device(index).is_ok()
@@ -26637,6 +28159,13 @@ impl Compositor {
             self.clear_manual_unmount_lock();
         }
         mounted
+    }
+
+    fn force_mount_volume_index_for_write(&mut self, index: usize) -> Result<(), String> {
+        if !self.force_mount_volume_index(index) {
+            return Err(String::from("no se pudo montar la unidad destino."));
+        }
+        Self::ensure_global_fat32_write_target()
     }
 
     fn ensure_fat_ready(&mut self) -> bool {
@@ -26697,7 +28226,7 @@ impl Compositor {
         }
 
         if let Some(win) = self.windows.iter_mut().find(|w| w.id == win_id) {
-            win.set_notepad_status("No hay volumen FAT32 disponible para guardar.");
+            win.set_notepad_status("No hay volumen FAT32/exFAT disponible para guardar.");
         }
         false
     }
@@ -26725,13 +28254,21 @@ impl Compositor {
                 let is_boot = Some(dev.index) == boot_device_index;
                 let media = if dev.removable { "USB" } else { "NVME/HDD" };
                 let fs = dev.fs_kind.as_str();
+                let volume_label = Self::explorer_volume_label_for_detected(dev, is_boot);
                 let boot_tag = if is_boot { " [BOOT]" } else { "" };
+                let lba = if dev.partition_start > 0 {
+                    alloc::format!(" LBA {}", dev.partition_start)
+                } else {
+                    String::new()
+                };
                 let title = alloc::format!(
-                    "{} {} [{}] ({} MiB){}",
+                    "{} [{} {} {}] ({} MiB){}{}",
+                    volume_label,
                     media,
                     dev.index,
                     fs,
                     dev.total_mib,
+                    lba,
                     boot_tag
                 );
                 items.push(ExplorerItem::new(
@@ -26753,7 +28290,20 @@ impl Compositor {
                         continue;
                     }
                     let fs = dev.fs_kind.as_str();
-                    let title = alloc::format!("USB {} [{}] ({} MiB)", dev.index, fs, dev.total_mib);
+                    let volume_label = Self::explorer_volume_label_for_detected(dev, is_boot);
+                    let lba = if dev.partition_start > 0 {
+                        alloc::format!(" LBA {}", dev.partition_start)
+                    } else {
+                        String::new()
+                    };
+                    let title = alloc::format!(
+                        "{} [USB {} {}] ({} MiB){}",
+                        volume_label,
+                        dev.index,
+                        fs,
+                        dev.total_mib,
+                        lba
+                    );
                     items.push(ExplorerItem::new(
                         title.as_str(),
                         ExplorerItemKind::ShortcutVolume,
@@ -26768,7 +28318,7 @@ impl Compositor {
                 items.push(ExplorerItem::new("Storage", ExplorerItemKind::ShortcutUsb, 0, 0));
                 String::from("No likely mount targets found. Try terminal command: disks")
             } else {
-                String::from("Select a device to probe and mount FAT32.")
+                String::from("Select a device to probe and mount FAT32/exFAT.")
             }
         };
 
@@ -26844,7 +28394,12 @@ impl Compositor {
                     entry.cluster
                 };
 
-                items.push(ExplorerItem::new(name.as_str(), kind, entry_cluster, entry.size));
+                let mut item = ExplorerItem::new(name.as_str(), kind, entry_cluster, entry.size);
+                item.create_date = entry.create_date;
+                item.create_time = entry.create_time;
+                item.write_date = entry.write_date;
+                item.write_time = entry.write_time;
+                items.push(item);
             }
         }
 
@@ -26863,36 +28418,20 @@ impl Compositor {
             return;
         }
 
-        let window_desktop_id = self
-            .windows
-            .iter()
-            .find(|w| w.id == win_id)
-            .map(|w| w.desktop_id)
-            .unwrap_or(self.active_desktop_id());
-        let recents_cluster_for_window = self
-            .resolve_desktop_recents_directory_for_desktop_id(window_desktop_id, false)
-            .ok()
-            .map(|(cluster, _)| cluster)
-            .filter(|cluster| *cluster >= 2);
-        let favorites_cluster = self
-            .resolve_favorites_directory_target(false)
-            .ok()
-            .map(|(cluster, _)| cluster)
-            .filter(|cluster| *cluster >= 2);
-
         let sticky_device = self
             .windows
             .iter()
             .find(|w| w.id == win_id)
             .and_then(|w| w.explorer_device_index);
         if let Some(target_index) = device_hint.or(sticky_device) {
-            if !self.ensure_volume_index_mounted(target_index) {
+            if !self.force_mount_volume_index(target_index) {
                 if let Some(win) = self.windows.iter_mut().find(|w| w.id == win_id) {
                     win.set_explorer_status("No se pudo montar la unidad para este Explorer.");
                 }
                 return;
             }
         }
+        let listing_device_index = self.current_volume_device_index;
 
         let (cluster, path, items) = {
             let fat = unsafe { &mut crate::fat32::GLOBAL_FAT };
@@ -26907,7 +28446,10 @@ impl Compositor {
 
             let mut effective_path = path;
             if effective_cluster == fat.root_cluster {
-                let volume = Self::volume_label_text(fat).unwrap_or(String::from("USB"));
+                let volume = listing_device_index
+                    .map(|index| Self::explorer_volume_label_for_mounted(index, fat))
+                    .or_else(|| Self::volume_label_text(fat))
+                    .unwrap_or(String::from("USB"));
                 effective_path = Self::explorer_path_root_component(effective_path.as_str())
                     .unwrap_or_else(|| alloc::format!("{}/", volume));
             }
@@ -26940,23 +28482,17 @@ impl Compositor {
                 let leaf = Self::path_leaf(effective_path.as_str());
                 Self::is_desktop_recents_dir_name(leaf.as_str())
             };
-            let viewing_recents = recents_cluster_for_window
-                .map(|recents_cluster| recents_cluster == effective_cluster)
-                .unwrap_or(recents_by_path);
             let favorites_by_path = {
                 let leaf = Self::path_leaf(effective_path.as_str());
                 Self::is_favorites_dir_name(leaf.as_str())
             };
-            let viewing_favorites = favorites_cluster
-                .map(|cluster| cluster == effective_cluster)
-                .unwrap_or(favorites_by_path);
-            if viewing_recents {
+            if recents_by_path {
                 items.retain(|item| {
                     item.kind == ExplorerItemKind::Home
                         || item.kind == ExplorerItemKind::Up
                         || (item.is_file() && item.label.to_ascii_lowercase().ends_with(".lnk"))
                 });
-            } else if viewing_favorites {
+            } else if favorites_by_path {
                 items.retain(|item| {
                     item.kind == ExplorerItemKind::Home
                         || item.kind == ExplorerItemKind::Up
@@ -26965,25 +28501,15 @@ impl Compositor {
             }
             (effective_cluster, effective_path, items)
         };
-        let listing_device_index = self.current_volume_device_index;
 
         self.explorer_clear_selection_for_window(win_id);
         if let Some(win) = self.windows.iter_mut().find(|w| w.id == win_id) {
             win.set_explorer_listing(path.as_str(), cluster, listing_device_index, items);
             win.set_explorer_status(status.as_str());
         }
-        let is_recents_folder = recents_cluster_for_window
-            .map(|recents_cluster| recents_cluster == cluster)
-            .unwrap_or_else(|| {
-                let leaf = Self::path_leaf(path.as_str());
-                Self::is_desktop_recents_dir_name(leaf.as_str())
-            });
-        let is_favorites_folder = favorites_cluster
-            .map(|favorites_cluster| favorites_cluster == cluster)
-            .unwrap_or_else(|| {
-                let leaf = Self::path_leaf(path.as_str());
-                Self::is_favorites_dir_name(leaf.as_str())
-            });
+        let leaf = Self::path_leaf(path.as_str());
+        let is_recents_folder = Self::is_desktop_recents_dir_name(leaf.as_str());
+        let is_favorites_folder = Self::is_favorites_dir_name(leaf.as_str());
         if cluster >= 2 && !is_recents_folder && !is_favorites_folder {
             let mut folder_label = Self::path_leaf(path.as_str());
             if folder_label.trim().is_empty() {
@@ -26998,6 +28524,13 @@ impl Compositor {
             self.set_window_recent_binding(win_id, folder_label.as_str(), command.as_str());
         } else {
             self.clear_window_recent_binding(win_id);
+        }
+
+        let listed_device_index = listing_device_index;
+        if self.force_mount_boot_fat32_for_compositor()
+            && self.current_volume_device_index != listed_device_index
+        {
+            self.invalidate_desktop_surface_cache();
         }
     }
 
@@ -27056,8 +28589,7 @@ impl Compositor {
             match fat.mount_uefi_block_device(index) {
                 Ok(vol) => {
                     self.clear_manual_unmount_lock();
-                    let label = Self::volume_label_from_bytes(&vol.volume_label)
-                        .unwrap_or(alloc::format!("VOL{}", vol.index));
+                    let label = Self::explorer_volume_label_for_mounted(index, fat);
                     let media = if vol.removable { "USB" } else { "NVME/HDD" };
                     (
                         vol.root_cluster,
@@ -27085,15 +28617,15 @@ impl Compositor {
     }
 
     fn open_explorer_named_root_dir(&mut self, win_id: usize, shortcut_name: &str) {
-        match self.resolve_named_root_dir_on_best_volume(shortcut_name, false) {
-            Ok((cluster, path)) => {
+        match self.resolve_named_root_dir_on_best_volume_with_index(shortcut_name, true, true) {
+            Ok((cluster, path, device_index)) => {
                 let status = alloc::format!("Folder: {}", shortcut_name);
                 self.show_explorer_directory(
                     win_id,
                     cluster,
                     path,
                     status,
-                    self.current_volume_device_index,
+                    Some(device_index),
                 );
             }
             Err(err) => {
@@ -27140,11 +28672,20 @@ impl Compositor {
             Some(win) => (win.explorer_current_cluster, win.explorer_path.clone()),
             None => return,
         };
+        let device_hint = self
+            .windows
+            .iter()
+            .find(|w| w.id == win_id)
+            .and_then(|w| w.explorer_device_index)
+            .or(self.current_volume_device_index);
 
         let (root_cluster, volume_label, parent_cluster) = {
             let fat = unsafe { &mut crate::fat32::GLOBAL_FAT };
             let root = fat.root_cluster;
-            let volume = Self::volume_label_text(fat).unwrap_or(String::from("USB"));
+            let volume = device_hint
+                .map(|index| Self::explorer_volume_label_for_mounted(index, fat))
+                .or_else(|| Self::volume_label_text(fat))
+                .unwrap_or(String::from("USB"));
 
             let mut parent = root;
             if current_cluster != root {
@@ -27162,12 +28703,6 @@ impl Compositor {
         };
         let root_path = Self::explorer_path_root_component(current_path.as_str())
             .unwrap_or_else(|| alloc::format!("{}/", volume_label));
-        let device_hint = self
-            .windows
-            .iter()
-            .find(|w| w.id == win_id)
-            .and_then(|w| w.explorer_device_index)
-            .or(self.current_volume_device_index);
 
         if current_cluster == root_cluster {
             let current_norm = Self::ascii_lower(current_path.trim().trim_end_matches('/'));
@@ -27183,18 +28718,6 @@ impl Compositor {
             } else {
                 self.refresh_explorer_home(win_id);
             }
-            return;
-        }
-
-        let current_leaf = {
-            let trimmed = current_path.trim_end_matches('/');
-            match trimmed.rfind('/') {
-                Some(idx) => &trimmed[idx + 1..],
-                None => trimmed,
-            }
-        };
-        if parent_cluster == root_cluster && Self::is_quick_access_shortcut_name(current_leaf) {
-            self.refresh_explorer_home(win_id);
             return;
         }
 
@@ -27753,6 +29276,125 @@ impl Compositor {
     fn is_audio_file_name(name: &str) -> bool {
         let n = name.to_ascii_lowercase();
         n.ends_with(".wav") || n.ends_with(".mp3") || n.ends_with(".mid")
+    }
+
+    fn is_video_file_name(name: &str) -> bool {
+        let n = name.to_ascii_lowercase();
+        n.ends_with(".mp4") || n.ends_with(".avi") || n.ends_with(".mkv") || n.ends_with(".rpv")
+    }
+
+    fn open_video_player_file(&mut self, file_cluster: u32, file_label: &str, file_size: u32) {
+        const RPV_RAM_CACHE_MAX_BYTES: usize = 512 * 1024 * 1024;
+
+        let title = alloc::format!("Video Player - {}", file_label);
+        let vp_id = self.create_video_player_window(title.as_str(), 100, 100, 640, 480);
+        let recent_cmd = Self::recent_file_command(
+            "vid",
+            self.current_volume_device_index,
+            0,
+            file_cluster,
+            file_size,
+            "/",
+            file_label,
+        );
+        self.set_window_recent_binding(vp_id, file_label, recent_cmd.as_str());
+
+        let mut width = 320;
+        let mut height = 240;
+        let mut fps = 60;
+        let data_offset = 16;
+        let mut status = String::from("Ready");
+        let mut cached_payload: Vec<u8> = Vec::new();
+        let cache_rpv_payload = if let Some(current_idx) = self.current_volume_device_index {
+            crate::fat32::Fat32::detect_uefi_block_devices()
+                .iter()
+                .any(|dev| dev.index == current_idx && dev.removable)
+        } else {
+            false
+        };
+
+        let is_rpv = file_label.to_ascii_lowercase().ends_with(".rpv");
+
+        if is_rpv {
+            if self.ensure_fat_ready() {
+                let fat = unsafe { &mut crate::fat32::GLOBAL_FAT };
+                let mut header_buf = [0u8; 16];
+                if let Ok(16) = fat.read_file_range(file_cluster, file_size as usize, 0, &mut header_buf) {
+                    if &header_buf[0..4] == b"RPV1" {
+                        width = u32::from_le_bytes(header_buf[4..8].try_into().unwrap());
+                        height = u32::from_le_bytes(header_buf[8..12].try_into().unwrap());
+                        fps = u32::from_le_bytes(header_buf[12..16].try_into().unwrap());
+
+                        if width == 0 || height == 0 || width > 1920 || height > 1080 {
+                            status = String::from("Error: Invalid resolution");
+                            width = 320; height = 240;
+                        } else {
+                            let payload_len = (file_size as usize).saturating_sub(data_offset);
+                            if payload_len > 0
+                                && cache_rpv_payload
+                                && file_size as usize <= RPV_RAM_CACHE_MAX_BYTES
+                                && cached_payload.try_reserve_exact(payload_len).is_ok()
+                            {
+                                cached_payload.resize(payload_len, 0);
+                                match fat.read_file_range(
+                                    file_cluster,
+                                    file_size as usize,
+                                    data_offset,
+                                    &mut cached_payload,
+                                ) {
+                                    Ok(n) if n == payload_len => {
+                                        let mb = payload_len / (1024 * 1024);
+                                        status = alloc::format!("RAM cache: {} MiB", mb);
+                                    }
+                                    _ => {
+                                        cached_payload.clear();
+                                        status = String::from("Streaming from disk");
+                                    }
+                                }
+                            } else if payload_len > RPV_RAM_CACHE_MAX_BYTES {
+                                status = String::from("Streaming from disk: too large for RAM cache");
+                            } else if payload_len > 0 && !cache_rpv_payload {
+                                status = String::from("Streaming from disk: internal volume");
+                            } else if payload_len > 0 {
+                                status = String::from("Streaming from disk: RAM cache unavailable");
+                            }
+                        }
+                    } else {
+                        status = String::from("Error: Not a valid RPV file");
+                    }
+                } else {
+                    status = String::from("Error: Could not read header");
+                }
+            }
+        } else {
+            status = String::from("Error: Formato no soportado (Usa tools/mp4_to_rpv.py)");
+        }
+
+        if let Some(win) = self.windows.iter_mut().find(|w| w.id == vp_id) {
+            win.video_player_file_name = String::from(file_label);
+            win.video_player_file_cluster = file_cluster;
+            win.video_player_file_size = file_size;
+            win.video_player_width = width;
+            win.video_player_height = height;
+            win.video_player_fps = if fps > 0 { fps } else { 60 };
+            win.video_player_data_offset = data_offset;
+            win.video_player_current_frame = 0;
+            win.video_player_last_tick = 0;
+            win.video_player_status = status;
+            win.video_player_cached_payload = cached_payload;
+
+            let new_w = core::cmp::max(width + 40, 360);
+            let new_h = core::cmp::max(height + 24 + 80, 240);
+            win.rect.width = new_w;
+            win.rect.height = new_h;
+
+            // Center the newly resized window on screen
+            win.rect.x = (1024 - new_w as i32) / 2;
+            win.rect.y = (768 - new_h as i32) / 2;
+            win.resize_buffer(new_w, new_h);
+            win.controls = crate::gui::window::WindowControls::new(win.rect.x, win.rect.y, win.rect.width);
+            win.render();
+        }
     }
 
     fn open_media_player_file(&mut self, file_cluster: u32, file_label: &str, file_size: u32) {
@@ -32507,6 +34149,27 @@ impl Compositor {
             None => return,
         };
 
+        let rel_mouse = Point {
+            x: mouse_x - win_x,
+            y: mouse_y - win_y - crate::gui::window::WINDOW_TITLE_BAR_H,
+        };
+
+        if let Some(win) = self.windows.iter_mut().find(|w| w.id == win_id) {
+            if win.explorer_side_panel_open {
+                // Check if click is on the 'X' button of the side panel
+                let panel_x = 16;
+                let panel_y = crate::gui::window::EXPLORER_TOP_H as i32 + 16;
+                let panel_w = 200;
+                let close_btn = Rect::new(panel_x + panel_w - 24, panel_y + 4, 20, 20);
+                if close_btn.contains(rel_mouse) {
+                    win.explorer_side_panel_open = false;
+                    win.render_explorer();
+                    return;
+                }
+            }
+        }
+
+
         match search_action {
             Some(ExplorerSearchClickAction::QueryField) => {
                 if let Some(win) = self.windows.iter_mut().find(|w| w.id == win_id) {
@@ -32524,10 +34187,7 @@ impl Compositor {
             None => {}
         }
 
-        let rel_mouse = Point {
-            x: mouse_x - win_x,
-            y: mouse_y - win_y - WINDOW_TITLE_BAR_H,
-        };
+
         if max_scroll > 0 {
             if up_rect.contains(rel_mouse) {
                 if let Some(win) = self.windows.iter_mut().find(|w| w.id == win_id) {
@@ -32567,6 +34227,18 @@ impl Compositor {
                     self.explorer_select_single(win_id, dir_cluster, &item);
                 } else if !self.explorer_item_selected(win_id, dir_cluster, &item) {
                     self.explorer_add_selection(win_id, dir_cluster, &item);
+                }
+
+                if let Some(win) = self.windows.iter_mut().find(|w| w.id == win_id) {
+                    win.explorer_side_panel_open = true;
+                    win.explorer_side_panel_item = Some(item.clone());
+
+                    if item.kind == ExplorerItemKind::Directory {
+                        win.explorer_side_panel_dir_size = None;
+                    } else {
+                        win.explorer_side_panel_dir_size = None;
+                    }
+                    win.render_explorer();
                 }
                 let selected_count = self
                     .explorer_collect_selected_items(win_id, dir_cluster, items.as_slice())
@@ -32634,6 +34306,8 @@ impl Compositor {
                     self.open_png_from_explorer_file(win_id, &item);
                 } else if Self::is_audio_file_name(item.label.as_str()) {
                     self.open_media_player_file(item.cluster, item.label.as_str(), item.size);
+                } else if Self::is_video_file_name(item.label.as_str()) {
+                    self.open_video_player_file(item.cluster, item.label.as_str(), item.size);
                 } else {
                     self.open_notepad_from_explorer_file(dir_cluster, dir_path, &item);
                 }
@@ -34087,6 +35761,35 @@ impl Compositor {
         }
     }
 
+    fn handle_video_player_click(&mut self, win_id: usize, mouse_x: i32, mouse_y: i32) {
+        if let Some(win) = self.windows.iter_mut().find(|w| w.id == win_id) {
+            if win.kind != WindowKind::VideoPlayer {
+                return;
+            }
+            let content_h = win.content_height();
+            if content_h <= 0 {
+                return;
+            }
+            let h = content_h as i32;
+            let w = win.rect.width as i32;
+            let controls_h = 60;
+            let controls_y = h - controls_h;
+            let btn_size = 30i32;
+            let btn_x = w / 2 - btn_size / 2;
+            let btn_y = controls_y + 20;
+
+            let local_x = mouse_x - win.rect.x;
+            let local_y = mouse_y - win.rect.y - crate::gui::window::WINDOW_TITLE_BAR_H;
+
+            // Check if play/pause button clicked
+            if local_x >= btn_x && local_x < btn_x + btn_size && local_y >= btn_y && local_y < btn_y + btn_size {
+                win.doom_native_running = !win.doom_native_running;
+                win.video_player_last_tick = crate::timer::ticks();
+                win.render();
+            }
+        }
+    }
+
     fn handle_task_manager_click(&mut self, win_id: usize, mouse_x: i32, mouse_y: i32) -> bool {
         let action = {
             let Some(win) = self.windows.iter().find(|w| w.id == win_id) else {
@@ -35004,6 +36707,23 @@ impl Compositor {
                 alloc::format!("web servort {}", arg_raw)
             };
             self.execute_command(win_id, mapped.as_str());
+            return;
+        }
+
+        if verb == "acpi" || (verb == "power" && arg_raw == "acpi") {
+            if let Some(win) = self.windows.iter_mut().find(|w| w.id == win_id) {
+                win.add_output(crate::acpi::s3_status_line().as_str());
+                win.render_terminal();
+            }
+            return;
+        }
+
+        if verb == "suspend" || verb == "sleep" {
+            if let Some(win) = self.windows.iter_mut().find(|w| w.id == win_id) {
+                win.add_output("Attempting ACPI S3 suspend...");
+                win.render_terminal();
+            }
+            self.enter_suspend();
             return;
         }
 
@@ -36754,47 +38474,52 @@ impl Compositor {
                         let fs = dev.fs_kind.as_str();
                         win.add_output(
                             alloc::format!(
-                                "  [{}] {} {} {} MiB fs={}",
+                                "  [{}] {} {} {} MiB fs={} lba={}",
                                 dev.index,
                                 media,
                                 scope,
                                 dev.total_mib,
-                                fs
+                                fs,
+                                dev.partition_start
                             )
                             .as_str(),
                         );
                     }
-                    win.add_output("Use 'mount <index>' only on entries fs=FAT32.");
+                    win.add_output("Use 'mount <index>' only on entries fs=FAT32 or fs=EXFAT.");
                 }
             }
             return;
         }
 
         if verb == "vols" {
-            let volumes = crate::fat32::Fat32::detect_uefi_fat_volumes();
+            let devices = crate::fat32::Fat32::detect_uefi_block_devices();
             if let Some(win) = self.windows.iter_mut().find(|w| w.id == win_id) {
-                if volumes.is_empty() {
-                    win.add_output("No FAT32 volumes detected on USB/NVMe/HDD.");
-                } else {
-                    win.add_output("Detected FAT32 volumes:");
-                    for vol in volumes.iter() {
-                        let label = Self::volume_label_from_bytes(&vol.volume_label)
-                            .unwrap_or(String::from("NO_LABEL"));
-                        let media = if vol.removable { "USB" } else { "NVME/HDD" };
-                        let scope = if vol.logical_partition { "part" } else { "disk" };
-                        win.add_output(
-                            alloc::format!(
-                                "  [{}] {} {} {} MiB '{}' LBA {}",
-                                vol.index,
-                                media,
-                                scope,
-                                vol.total_mib,
-                                label,
-                                vol.partition_start
-                            )
-                            .as_str(),
-                        );
+                let mut shown = 0usize;
+                for dev in devices.iter() {
+                    if !dev.fs_kind.is_mountable() {
+                        continue;
                     }
+                    if shown == 0 {
+                        win.add_output("Detected FAT32/exFAT volumes:");
+                    }
+                    shown = shown.saturating_add(1);
+                    let media = if dev.removable { "USB" } else { "NVME/HDD" };
+                    let scope = if dev.logical_partition { "part" } else { "disk" };
+                    win.add_output(
+                        alloc::format!(
+                            "  [{}] {} {} {} MiB fs={} lba={}",
+                            dev.index,
+                            media,
+                            scope,
+                            dev.total_mib,
+                            dev.fs_kind.as_str(),
+                            dev.partition_start
+                        )
+                        .as_str(),
+                    );
+                }
+                if shown == 0 {
+                    win.add_output("No FAT32/exFAT volumes detected on USB/NVMe/HDD.");
                 }
             }
             return;
@@ -36903,74 +38628,78 @@ impl Compositor {
 
                     match (src_mount, dst_mount) {
                         (Ok(_src_vol), Ok(_dst_vol)) => {
-                            let src_root = src_fat.root_cluster;
-                            let dst_root = dst_fat.root_cluster;
-                            let src_resolved = Self::resolve_terminal_parent_and_leaf(
-                                &mut src_fat,
-                                src_root,
-                                src_path,
-                            );
-                            let dst_resolved = Self::resolve_terminal_parent_and_leaf(
-                                &mut dst_fat,
-                                dst_root,
-                                dst_path,
-                            );
+                            if let Err(err) = Self::ensure_fat32_write_target(&dst_fat) {
+                                out.push(alloc::format!("CPDEV error: {}", err));
+                            } else {
+                                let src_root = src_fat.root_cluster;
+                                let dst_root = dst_fat.root_cluster;
+                                let src_resolved = Self::resolve_terminal_parent_and_leaf(
+                                    &mut src_fat,
+                                    src_root,
+                                    src_path,
+                                );
+                                let dst_resolved = Self::resolve_terminal_parent_and_leaf(
+                                    &mut dst_fat,
+                                    dst_root,
+                                    dst_path,
+                                );
 
-                            match (src_resolved, dst_resolved) {
-                                (Ok((src_dir, src_leaf)), Ok((dst_dir, dst_leaf))) => {
-                                    match Self::find_file_entry_by_hint(
-                                        &mut src_fat,
-                                        src_dir,
-                                        src_leaf.as_str(),
-                                        0,
-                                    ) {
-                                        Ok(source) => {
-                                            if source.size as usize > COPY_MAX_FILE_BYTES {
-                                                out.push(alloc::format!(
-                                                    "CPDEV error: archivo demasiado grande (max {} bytes).",
-                                                    COPY_MAX_FILE_BYTES
-                                                ));
-                                            } else {
-                                                let task_kind = TerminalFsTaskKind::CopyAcrossDevices {
-                                                    src_device_index: src_dev,
-                                                    src_dir_cluster: src_dir,
-                                                    src_leaf: src_leaf.clone(),
-                                                    src_path: String::from(src_path),
-                                                    dst_device_index: dst_dev,
-                                                    dst_dir_cluster: dst_dir,
-                                                    dst_leaf: dst_leaf.clone(),
-                                                    dst_path: String::from(dst_path),
-                                                };
-                                                match self.enqueue_terminal_fs_task(
-                                                    win_id,
-                                                    SystemTaskPriority::Background,
-                                                    task_kind,
-                                                ) {
-                                                    Ok((task_id, position)) => {
-                                                        out.push(alloc::format!(
-                                                            "CPDEV: task #{} encolada (prioridad background, posicion {}).",
-                                                            task_id, position
-                                                        ));
-                                                        out.push(String::from(
-                                                            "CPDEV: transferencia en segundo plano; usa 'tasks status'.",
-                                                        ));
-                                                    }
-                                                    Err(err) => {
-                                                        out.push(alloc::format!("CPDEV error: {}", err));
+                                match (src_resolved, dst_resolved) {
+                                    (Ok((src_dir, src_leaf)), Ok((dst_dir, dst_leaf))) => {
+                                        match Self::find_file_entry_by_hint(
+                                            &mut src_fat,
+                                            src_dir,
+                                            src_leaf.as_str(),
+                                            0,
+                                        ) {
+                                            Ok(source) => {
+                                                if source.size as usize > COPY_MAX_FILE_BYTES {
+                                                    out.push(alloc::format!(
+                                                        "CPDEV error: archivo demasiado grande (max {} bytes).",
+                                                        COPY_MAX_FILE_BYTES
+                                                    ));
+                                                } else {
+                                                    let task_kind = TerminalFsTaskKind::CopyAcrossDevices {
+                                                        src_device_index: src_dev,
+                                                        src_dir_cluster: src_dir,
+                                                        src_leaf: src_leaf.clone(),
+                                                        src_path: String::from(src_path),
+                                                        dst_device_index: dst_dev,
+                                                        dst_dir_cluster: dst_dir,
+                                                        dst_leaf: dst_leaf.clone(),
+                                                        dst_path: String::from(dst_path),
+                                                    };
+                                                    match self.enqueue_terminal_fs_task(
+                                                        win_id,
+                                                        SystemTaskPriority::Background,
+                                                        task_kind,
+                                                    ) {
+                                                        Ok((task_id, position)) => {
+                                                            out.push(alloc::format!(
+                                                                "CPDEV: task #{} encolada (prioridad background, posicion {}).",
+                                                                task_id, position
+                                                            ));
+                                                            out.push(String::from(
+                                                                "CPDEV: transferencia en segundo plano; usa 'tasks status'.",
+                                                            ));
+                                                        }
+                                                        Err(err) => {
+                                                            out.push(alloc::format!("CPDEV error: {}", err));
+                                                        }
                                                     }
                                                 }
                                             }
-                                        }
-                                        Err(err) => {
-                                            out.push(alloc::format!("CPDEV error (origen): {}", err));
+                                            Err(err) => {
+                                                out.push(alloc::format!("CPDEV error (origen): {}", err));
+                                            }
                                         }
                                     }
-                                }
-                                (Err(err), _) => {
-                                    out.push(alloc::format!("CPDEV error ruta origen: {}", err));
-                                }
-                                (_, Err(err)) => {
-                                    out.push(alloc::format!("CPDEV error ruta destino: {}", err));
+                                    (Err(err), _) => {
+                                        out.push(alloc::format!("CPDEV error ruta origen: {}", err));
+                                    }
+                                    (_, Err(err)) => {
+                                        out.push(alloc::format!("CPDEV error ruta destino: {}", err));
+                                    }
                                 }
                             }
                         }
@@ -39351,11 +41080,12 @@ impl Compositor {
             let mut out = Vec::new();
             let arg = arg_raw.trim();
             let mut install_prompt_active = false;
-            let mut install_irq_paused = false;
+            let mut install_io_mode_guard: Option<StableIoModeGuard> = None;
             let mut install_saved_uefi_handle = None;
 
             if !self.headless
                 && !arg.is_empty()
+                && INSTALL_ENABLE_AP_TASKS
                 && crate::smp::aps_online() > 0
                 && !crate::runtime::runtime_uefi_active()
             {
@@ -39485,41 +41215,33 @@ impl Compositor {
                 }
 
                                 if out.is_empty() {
-                                    let mut irq_mode_active = crate::syscall::runtime_irq_mode_active();
-                                    if irq_mode_active || crate::interrupts::irq_timer_source_armed() {
-                                        if let Some(win) =
-                                            self.windows.iter_mut().find(|w| w.id == win_id)
-                                        {
-                                            win.add_output(
-                                                "Install: suspendiendo IRQ timer para IO estable...",
-                                            );
-                                            win.render_terminal();
-                                        }
-                                        install_irq_paused = crate::interrupts::suspend_irq_timer();
-                                        crate::runtime::request_runtime_mode(
-                                            crate::runtime::RuntimeMode::Polling,
+                                    if let Some(win) =
+                                        self.windows.iter_mut().find(|w| w.id == win_id)
+                                    {
+                                        win.add_output(
+                                            "Install: cambiando a polling estable para IO...",
                                         );
-                                        irq_mode_active = crate::runtime::service_mode_switch_non_runtime(
-                                            irq_mode_active,
+                                        win.render_terminal();
+                                    }
+                                    install_io_mode_guard = Some(StableIoModeGuard::enter());
+                                    if let Some(win) =
+                                        self.windows.iter_mut().find(|w| w.id == win_id)
+                                    {
+                                        win.add_output(
+                                            if install_io_mode_guard
+                                                .as_ref()
+                                                .map(|guard| guard.restores_irq())
+                                                .unwrap_or(false)
+                                            {
+                                                "Install: IRQ pausado; se restaurara al terminar."
+                                            } else {
+                                                "Install: ya estaba en polling estable."
+                                            },
                                         );
-                                        if let Some(win) =
-                                            self.windows.iter_mut().find(|w| w.id == win_id)
-                                        {
-                                            win.add_output(
-                                                if irq_mode_active {
-                                                    "Install: IRQ runtime sigue activo; timer suspendido."
-                                                } else {
-                                                    "Install: IRQ pausado (polling) + timer suspendido."
-                                                },
-                                            );
-                                            win.render_terminal();
-                                        }
+                                        win.render_terminal();
                                     }
 
-                                    if INSTALL_DISABLE_UEFI_BLOCKIO
-                                        && crate::runtime::runtime_uefi_active()
-                                        && fat.uefi_block_handle.is_some()
-                                    {
+                                    if INSTALL_DISABLE_UEFI_BLOCKIO && fat.uefi_block_handle.is_some() {
                                         install_saved_uefi_handle = fat.uefi_block_handle.take();
                                         if let Some(win) =
                                             self.windows.iter_mut().find(|w| w.id == win_id)
@@ -39825,18 +41547,11 @@ impl Compositor {
                                                 )
                                                 .as_str(),
                                             );
-                                            let irq_guard = crate::syscall::runtime_irq_mode_active();
-                                            if irq_guard {
-                                                crate::interrupts::suspend_irq_timer();
-                                            }
                                             let preflight_read = fat.read_file_sized(
                                                 entry.cluster,
                                                 preflight_len,
                                                 &mut preflight,
                                             );
-                                            if irq_guard {
-                                                crate::interrupts::resume_irq_timer();
-                                            }
                                             match preflight_read {
                                             Ok(pre_len) => {
                                                 preflight.truncate(pre_len);
@@ -40004,18 +41719,11 @@ impl Compositor {
                                                 }
                                             };
                                             if out.is_empty() {
-                                                let irq_guard = crate::syscall::runtime_irq_mode_active();
-                                                if irq_guard {
-                                                    crate::interrupts::suspend_irq_timer();
-                                                }
                                                 let sig_read = fat.read_file_sized(
                                                     sig_entry.cluster,
                                                     sig_entry.size as usize,
                                                     &mut sig_raw,
                                                 );
-                                                if irq_guard {
-                                                    crate::interrupts::resume_irq_timer();
-                                                }
                                                 match sig_read {
                                                     Ok(sig_len) => {
                                                         sig_raw.truncate(sig_len);
@@ -40030,6 +41738,7 @@ impl Compositor {
                                                                 }
                                                                 if out.is_empty() {
                                                                     let mut last_pump = 0usize;
+                                                                    let mut last_pct_units = 700usize;
                                                                     let hash_result =
                                                                         Self::sha256_hex_with_progress(
                                                                             package_raw.as_slice(),
@@ -40052,6 +41761,10 @@ impl Compositor {
                                                                                         pct_units,
                                                                                         None,
                                                                                     );
+                                                                                    if pct_units != last_pct_units {
+                                                                                        self.paint();
+                                                                                        last_pct_units = pct_units;
+                                                                                    }
                                                                                 }
                                                                                 if hashed.saturating_sub(last_pump)
                                                                                     >= INSTALL_SHA256_PUMP_BYTES
@@ -40313,8 +42026,24 @@ impl Compositor {
                                                 "RPX INSTALL\nPACKAGE={}\nFILES={}\n",
                                                 package_name, file_count
                                             );
+                                            let rpx_total_bytes = package_raw.len().max(1);
+                                            let mut rpx_units_reported = 740usize;
 
                                             for idx in 0..file_count {
+                                                if install_prompt_active {
+                                                    let pct_units = 740usize
+                                                        .saturating_add(
+                                                            cursor
+                                                                .saturating_mul(180)
+                                                                .saturating_div(rpx_total_bytes),
+                                                        )
+                                                        .min(920);
+                                                    if pct_units > rpx_units_reported {
+                                                        self.install_progress_set_target(pct_units, None);
+                                                        rpx_units_reported = pct_units;
+                                                    }
+                                                }
+
                                                 let Some(path_len_u16) =
                                                     Self::read_u16_le(package_raw.as_slice(), &mut cursor)
                                                 else {
@@ -40457,9 +42186,25 @@ impl Compositor {
                                             let mut cursor = 0usize;
                                             let mut zip_index = 0usize;
                                             let mut parsed_files = 0usize;
+                                            let zip_total_bytes = package_raw.len().max(1);
+                                            let mut zip_units_reported = 700usize;
                                             manifest = alloc::format!("ZIP INSTALL\nPACKAGE={}\n", package_name);
 
                                             while out.is_empty() && cursor + 4 <= package_raw.len() {
+                                                if install_prompt_active {
+                                                    let pct_units = 700usize
+                                                        .saturating_add(
+                                                            cursor
+                                                                .saturating_mul(220)
+                                                                .saturating_div(zip_total_bytes),
+                                                        )
+                                                        .min(920);
+                                                    if pct_units > zip_units_reported {
+                                                        self.install_progress_set_target(pct_units, None);
+                                                        zip_units_reported = pct_units;
+                                                    }
+                                                }
+
                                                 let local_offset = cursor;
                                                 let sig = u32::from_le_bytes([
                                                     package_raw[cursor],
@@ -41156,10 +42901,8 @@ impl Compositor {
                 self.finish_install_progress_prompt(!install_failed);
             }
 
-            if install_irq_paused {
-                crate::interrupts::resume_irq_timer();
-                crate::runtime::request_runtime_mode(crate::runtime::RuntimeMode::IrqSafe);
-                let _ = crate::runtime::service_mode_switch_non_runtime(false);
+            if let Some(guard) = install_io_mode_guard.take() {
+                guard.restore();
             }
             if let Some(handle) = install_saved_uefi_handle {
                 fat.uefi_block_handle = Some(handle);
@@ -41366,7 +43109,7 @@ impl Compositor {
                 if !fat.init() {
                     if let Some(win) = self.windows.iter_mut().find(|w| w.id == win_id) {
                         win.add_output("Error: Filesystem initialization failed.");
-                        win.add_output("Could not auto-mount FAT32. Use 'disks' then 'mount <n>'.");
+                    win.add_output("Could not auto-mount FAT32/exFAT. Use 'disks' then 'mount <n>'.");
                     }
                     return;
                 }
@@ -41383,8 +43126,8 @@ impl Compositor {
                     win.add_output("  cp <src> <dst> - Copy file (supports simple paths)");
                     win.add_output("  mv <src> <dst> - Move/rename file");
                     win.add_output("  disks - List USB/NVMe/HDD BlockIO devices");
-                    win.add_output("  vols - List mountable FAT32 volumes");
-                    win.add_output("  mount <n> - Mount FAT32 from 'disks' index");
+                    win.add_output("  vols - List mountable FAT32/exFAT volumes");
+                    win.add_output("  mount <n> - Mount FAT32/exFAT from 'disks' index");
                     win.add_output("  unmount - Unmount active volume");
                     win.add_output("  cpdev <src_dev> <src_path> <dst_dev> <dst_path> - Copy file between devices");
                     win.add_output("  net - Show transport/IP/failover status");
@@ -41412,6 +43155,8 @@ impl Compositor {
                     win.add_output("  servohost ... - alias de web servohost");
                     win.add_output("  servort ... - alias de web servort");
                     win.add_output("  mem - Show memory statistics");
+                    win.add_output("  acpi - Show ACPI S3 diagnostics");
+                    win.add_output("  suspend - Try ACPI S3 suspend");
                     win.add_output("  stream <status|flush|auto on|auto off|auto status> - Scheduler de salida multitarea para terminal/procesos");
                     win.add_output("  tasks <status|clear|cancel <id>|tune ...> - Cola/throttle de tareas de sistema (cp/mv/cpdev en background)");
                     win.add_output("  install [--autoport] <package.rpx|package.zip|package.tar|package.tar.gz|package.deb|setup.exe> [app_id] - Install package");
@@ -41456,7 +43201,7 @@ impl Compositor {
 
         if verb == "help" {
             output = String::from(
-                "Available commands:\n  ls - List files\n  cd <dir> - Change dir\n  cat <file> - Read file\n  cp <src> <dst> - Copy file\n  mv <src> <dst> - Move/rename file\n  disks - List USB/NVMe/HDD BlockIO devices\n  vols - List mountable FAT32 volumes\n  mount <n> - Mount FAT32 from 'disks' index\n  unmount - Unmount active volume\n  cpdev <src_dev> <src_path> <dst_dev> <dst_path> - Copy file between devices\n  net - Show transport/IP/failover status\n  net dhcp - Request dynamic IP via DHCP\n  net static - Apply default static IP\n  net static <ip> <prefijo> <gateway> - Apply custom static IP\n  net mode - Show current IP mode\n  net https <on|off|status> - HTTPS compatibility\n  net diag - Dump Intel Ethernet RX/TX registers\n  wifi - Show WiFi status\n  wifi scan - Scan WiFi networks\n  wifi connect <ssid> <clave> - Save profile/connect\n  wifi disconnect - Disconnect WiFi\n  wifi failover <ethernet|wifi|status> - Auto priority\n  fetch <url> [file_8_3] - Download file from network\n  web backend <builtin|litehtml|litehtmlrt|servort|vaev|webkit|servohost|cef|status> - Browser renderer\n  web litehtmlrt <status|target <path>> - Runtime LinuxRT para litehtml\n  web servort <status|target <path>|mode <safe|real|status>|open <url>|frame|input ...> - Runtime LinuxRT para Servo\n  web vaev status - Embedded Vaev bridge diagnostics\n  web vaev input <click x y|scroll d|key K|text T|back|forward|reload>\n  web native <on|off|status> - Native DOM/layout/raster engine\n  web webkit <status|endpoint|ping|open|frame|input> - Host WebKit bridge\n  web servohost <status|endpoint|ping|open|frame|input> - Host Servo bridge (alias)\n  wry ... - alias de web webkit\n  servohost ... - alias de web servohost\n  servort ... - alias de web servort\n  mem - Show memory statistics\n  stream <status|flush|auto on|auto off|auto status> - Scheduler de salida multitarea para terminal/procesos\n  tasks <status|clear|cancel <id>|tune ...> - Cola/throttle de tareas de sistema (cp/mv/cpdev en background)\n  install [--autoport] <package.rpx|package.zip|package.tar|package.tar.gz|package.deb|setup.exe> [app_id] - Install package\n  entry <archivo> [app_id] - Generic installer entry point\n  linux inspect <elf> | linux run <elf> [args...] | linux runreal <elf> [args...] | linux runrealx <elf> [args...] | linux launch <elf> [args...] | linux launchmeta [--strict] <elf> | linux transfer <on|off|status> | linux runtime <quick|deep|status> | linux guest <status|start|rootfs|share|prefix|map> | linux app <run|map|status> | linux proc <start|startm|startx|startmx|status|step|stop> | linux runloop <start|startx|startm|startmx|status|step|stop> | linux bridge <open|close|status|test>\n  host newlib porting - scripts/newlib_port.sh (scaffold/build/doctor)\n  ruby -e <code> | ruby <file.rb> - Ruby subset runtime\n  runapp <layout.rml> - Open .RML app in App Runner\n  ide - Open Redux Studio (editor interno + preview + install/export .rpx)\n  clear - Clear screen\n  help - Show this help\n  cppdoom - Launch CPP-DOOM native app\n  shell - Launch external UEFI Shell image",
+                "Available commands:\n  ls - List files\n  cd <dir> - Change dir\n  cat <file> - Read file\n  cp <src> <dst> - Copy file\n  mv <src> <dst> - Move/rename file\n  disks - List USB/NVMe/HDD BlockIO devices\n  vols - List mountable FAT32/exFAT volumes\n  mount <n> - Mount FAT32/exFAT from 'disks' index\n  unmount - Unmount active volume\n  cpdev <src_dev> <src_path> <dst_dev> <dst_path> - Copy file between devices\n  net - Show transport/IP/failover status\n  net dhcp - Request dynamic IP via DHCP\n  net static - Apply default static IP\n  net static <ip> <prefijo> <gateway> - Apply custom static IP\n  net mode - Show current IP mode\n  net https <on|off|status> - HTTPS compatibility\n  net diag - Dump Intel Ethernet RX/TX registers\n  wifi - Show WiFi status\n  wifi scan - Scan WiFi networks\n  wifi connect <ssid> <clave> - Save profile/connect\n  wifi disconnect - Disconnect WiFi\n  wifi failover <ethernet|wifi|status> - Auto priority\n  fetch <url> [file_8_3] - Download file from network\n  web backend <builtin|litehtml|litehtmlrt|servort|vaev|webkit|servohost|cef|status> - Browser renderer\n  web litehtmlrt <status|target <path>> - Runtime LinuxRT para litehtml\n  web servort <status|target <path>|mode <safe|real|status>|open <url>|frame|input ...> - Runtime LinuxRT para Servo\n  web vaev status - Embedded Vaev bridge diagnostics\n  web vaev input <click x y|scroll d|key K|text T|back|forward|reload>\n  web native <on|off|status> - Native DOM/layout/raster engine\n  web webkit <status|endpoint|ping|open|frame|input> - Host WebKit bridge\n  web servohost <status|endpoint|ping|open|frame|input> - Host Servo bridge (alias)\n  wry ... - alias de web webkit\n  servohost ... - alias de web servohost\n  servort ... - alias de web servort\n  mem - Show memory statistics\n  stream <status|flush|auto on|auto off|auto status> - Scheduler de salida multitarea para terminal/procesos\n  tasks <status|clear|cancel <id>|tune ...> - Cola/throttle de tareas de sistema (cp/mv/cpdev en background)\n  install [--autoport] <package.rpx|package.zip|package.tar|package.tar.gz|package.deb|setup.exe> [app_id] - Install package\n  entry <archivo> [app_id] - Generic installer entry point\n  linux inspect <elf> | linux run <elf> [args...] | linux runreal <elf> [args...] | linux runrealx <elf> [args...] | linux launch <elf> [args...] | linux launchmeta [--strict] <elf> | linux transfer <on|off|status> | linux runtime <quick|deep|status> | linux guest <status|start|rootfs|share|prefix|map> | linux app <run|map|status> | linux proc <start|startm|startx|startmx|status|step|stop> | linux runloop <start|startx|startm|startmx|status|step|stop> | linux bridge <open|close|status|test>\n  host newlib porting - scripts/newlib_port.sh (scaffold/build/doctor)\n  ruby -e <code> | ruby <file.rb> - Ruby subset runtime\n  runapp <layout.rml> - Open .RML app in App Runner\n  ide - Open Redux Studio (editor interno + preview + install/export .rpx)\n  clear - Clear screen\n  help - Show this help\n  cppdoom - Launch CPP-DOOM native app\n  shell - Launch external UEFI Shell image",
             );
         } else if verb == "clear" {
             if let Some(win) = self.windows.iter_mut().find(|w| w.id == win_id) {
@@ -41638,15 +43383,20 @@ impl Compositor {
                     };
                 } else {
                     let current_cluster = self.terminal_current_cluster(win_id, fat);
-                    let (src_dir, src_leaf) = match Self::resolve_terminal_parent_and_leaf(
-                        fat,
-                        current_cluster,
-                        src_arg,
-                    ) {
-                        Ok(v) => v,
-                        Err(err) => {
-                            output = alloc::format!("CP/MV error (origen): {}", err);
-                            (0, String::new())
+                    let (src_dir, src_leaf) = if let Err(err) = Self::ensure_fat32_write_target(fat) {
+                        output = alloc::format!("CP/MV error: {}", err);
+                        (0, String::new())
+                    } else {
+                        match Self::resolve_terminal_parent_and_leaf(
+                            fat,
+                            current_cluster,
+                            src_arg,
+                        ) {
+                            Ok(v) => v,
+                            Err(err) => {
+                                output = alloc::format!("CP/MV error (origen): {}", err);
+                                (0, String::new())
+                            }
                         }
                     };
                     if !output.is_empty() {

@@ -11,6 +11,12 @@ VOLUME_ROOT="${1:-/Volumes/REDUXOS}"
 RUNTIME_ROOT="${VOLUME_ROOT}/LINUXRT"
 WORK_ROOT="${2:-/tmp/linuxrt-bootstrap}"
 UBUNTU_MIRROR="${UBUNTU_MIRROR:-https://archive.ubuntu.com/ubuntu}"
+CURL_OPTS=(
+  "--retry" "3"
+  "--retry-delay" "1"
+  "--connect-timeout" "15"
+  "--max-time" "120"
+)
 
 SUITES=(
   "jammy-updates"
@@ -38,6 +44,7 @@ PACKAGES=(
   "libatk-bridge2.0-0"
   "libcups2"
   "libpango-1.0-0"
+  "libpangocairo-1.0-0"
   "libcairo2"
   "libx11-6"
   "libx11-xcb1"
@@ -82,6 +89,14 @@ PACKAGES=(
   "libwayland-client0"
   "libwayland-cursor0"
   "libwayland-egl1"
+  "libqt5core5a"
+  "libqt5dbus5"
+  "libqt5gui5"
+  "libqt5network5"
+  "libqt5widgets5"
+  "libqt5waylandclient5"
+  "libqt5waylandcompositor5"
+  "qtwayland5"
   "libdrm2"
   "libxinerama1"
   "libxi6"
@@ -230,7 +245,7 @@ for suite in "${SUITES[@]}"; do
     idx_base="${WORK_ROOT}/index/${suite}_${comp}.Packages"
     idx_url="${UBUNTU_MIRROR}/dists/${suite}/${comp}/binary-amd64/Packages.xz"
     echo "Index: $idx_url"
-    if curl -fsSL "$idx_url" -o "${idx_base}.xz"; then
+    if curl -fsSL "${CURL_OPTS[@]}" "$idx_url" -o "${idx_base}.xz"; then
       xz -dc "${idx_base}.xz" > "${idx_base}"
       INDEX_FILES+=("${idx_base}")
     fi
@@ -252,7 +267,7 @@ for pkg in "${PACKAGES[@]}"; do
   deb_url="${UBUNTU_MIRROR}/${rel_path}"
   deb_out="${WORK_ROOT}/debs/${pkg}.deb"
   echo "  - $pkg"
-  if ! curl -fsSL "$deb_url" -o "$deb_out"; then
+  if ! curl -fsSL "${CURL_OPTS[@]}" "$deb_url" -o "$deb_out"; then
     echo "WARN: failed to download $pkg ($deb_url)"
     rm -f "$deb_out"
   fi

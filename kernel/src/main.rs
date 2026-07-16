@@ -11,6 +11,7 @@ mod hal;
 mod input;
 mod interrupts;
 mod memory;
+pub mod paging;
 mod process;
 mod privilege;
 mod runtime;
@@ -25,6 +26,7 @@ mod virtio;
 mod nvme;
 mod xhci;
 mod audio;
+mod acpi;
 mod wav;
 pub mod net;
 mod intel_xe;
@@ -87,7 +89,9 @@ const DESKTOP_FRAME_STALL_US_MIN: u64 = 200;
 const DESKTOP_FRAME_STALL_US_MAX: u64 = 1_500;
 const DESKTOP_FRAME_STALL_FRACTION: u64 = 8;
 const DESKTOP_FRAME_STALL_US_INTERACTIVE_MIN: u64 = 30;
+const DESKTOP_SUSPEND_STALL_US: u64 = 100_000;
 const DESKTOP_AUTO_IRQ_ON_START: bool = false;
+const OS_BOOT_NAME: &str = "Zenox OS";
 
 static mut QUIET_BOOT: bool = false;
 
@@ -114,6 +118,7 @@ fn efi_main() -> Status {
     crate::runtime::set_runtime_uefi_active(true);
     
     allocator::init_heap();
+    maybe_rename_legacy_redux_boot_options();
     maybe_auto_register_installed_boot_option();
     maybe_ensure_redux_boot_priority();
 
@@ -134,10 +139,7 @@ fn efi_main() -> Status {
                 Ok(msg) => println(msg.as_str()),
                 Err(err) => println(alloc::format!("UEFI boot option: {}", err).as_str()),
             }
-            match force_windows_boot_manager_to_redux() {
-                Ok(msg) => println(msg.as_str()),
-                Err(err) => println(alloc::format!("UEFI fallback hook: {}", err).as_str()),
-            }
+            println("UEFI fallback hook: omitido para no modificar Windows Boot Manager.");
             println("Installer: rebooting now...");
             uefi::boot::stall(500_000);
             uefi::runtime::reset(ResetType::COLD, Status::SUCCESS, None);
@@ -161,21 +163,27 @@ fn efi_main() -> Status {
             framebuffer::init(info);
             let splash_bytes = include_bytes!("splash.png");
             if let Ok((orig_w, orig_h, rgb_data)) = crate::gui::compositor::Compositor::decode_png_to_rgb(splash_bytes) {
-                // Scale down by 50%
-                let img_w = orig_w / 2;
-                let img_h = orig_h / 2;
-                let mut scaled_data = alloc::vec::Vec::with_capacity((img_w * img_h) as usize);
-                
+                let screen_min = core::cmp::min(info.width, info.height);
+                let max_dim = (screen_min.saturating_mul(3) / 5).max(96);
+                let orig_w_uz = orig_w as usize;
+                let orig_h_uz = orig_h as usize;
+                let max_orig_dim = core::cmp::max(orig_w_uz, orig_h_uz);
+
+                let (img_w, img_h) = if max_orig_dim > max_dim {
+                    (orig_w_uz * max_dim / max_orig_dim, orig_h_uz * max_dim / max_orig_dim)
+                } else {
+                    (orig_w_uz, orig_h_uz)
+                };
+
+                let mut scaled_data = alloc::vec::Vec::with_capacity(img_w * img_h);
                 for y in 0..img_h {
                     for x in 0..img_w {
-                        let orig_x = x * 2;
-                        let orig_y = y * 2;
-                        let src_idx = (orig_y * orig_w + orig_x) as usize;
-                        if src_idx < rgb_data.len() {
-                            scaled_data.push(rgb_data[src_idx]);
-                        } else {
-                            scaled_data.push(0);
-                        }
+                        let orig_x = x * orig_w_uz / img_w;
+                        let orig_y = y * orig_h_uz / img_h;
+                        let orig_x = core::cmp::min(orig_x, orig_w_uz.saturating_sub(1));
+                        let orig_y = core::cmp::min(orig_y, orig_h_uz.saturating_sub(1));
+                        let src_idx = orig_y * orig_w_uz + orig_x;
+                        scaled_data.push(rgb_data.get(src_idx).copied().unwrap_or(0));
                     }
                 }
 
@@ -203,7 +211,7 @@ fn efi_main() -> Status {
     quota::init();
     quota::test_quota();
 
-    println("Go OS UEFI Kernel - Phase 1+");
+    println("Zenox OS UEFI Kernel - Phase 1+");
     println("x86_64 + OVMF | Rust no_std");
     println("");
 
@@ -274,7 +282,7 @@ fn boot_media_has_install_marker() -> bool {
 
 fn should_skip_preboot_installer() -> bool {
     if boot_media_has_install_marker() {
-        println("Preboot installer: installed media marker detected, skipping installer.");
+        println("Preboot installer: Zenox OS instalado detectado; se omite instalador.");
         return true;
     }
 
@@ -282,7 +290,7 @@ fn should_skip_preboot_installer() -> bool {
         return false;
     };
     if handle_is_removable(current) == Some(false) {
-        println("Preboot installer: internal boot detected, skipping installer.");
+        println("Preboot installer: arranque interno detectado; se omite instalador.");
         return true;
     }
 
@@ -290,15 +298,16 @@ fn should_skip_preboot_installer() -> bool {
 }
 
 fn should_show_boot_selector() -> bool {
-    if boot_media_has_install_marker() {
-        // If we are already running from the installed Redux volume,
-        // continue directly to GUI instead of presenting another selector.
-        return false;
-    }
+    // The user requested to always show the boot selector, even when
+    // booting directly from an installed Zenox OS volume.
     let Some(current) = current_boot_device_handle() else {
         return false;
     };
     if handle_is_removable(current) == Some(false) {
+        return true;
+    }
+
+    if find_installed_redux_handle(Some(current)).is_some() {
         return true;
     }
 
@@ -310,51 +319,74 @@ fn should_show_boot_selector() -> bool {
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum BootSelectorChoice {
-    BootRedux,
+    BootRedux(usize),
     BootLinuxGuest,
     BootOtherOs,
 }
 
 fn maybe_handle_boot_selector() {
     let current_handle = current_boot_device_handle();
-    let installed_handle = find_installed_redux_handle(current_handle);
+    let installed_handles = find_installed_redux_handles(None);
+    let installed_handle = installed_handles.first().copied();
     let has_linux_guest = detect_linux_guest_boot_target(current_handle, installed_handle).is_some();
     let has_other_os = detect_other_os_boot_target(current_handle, installed_handle).is_some()
         || find_windows_boot_option_id().ok().flatten().is_some();
 
-    if installed_handle.is_none() && !has_other_os && !has_linux_guest {
+    if installed_handles.is_empty() && !has_other_os && !has_linux_guest {
         return;
     }
 
     unsafe { QUIET_BOOT = false; }
     clear_screen();
-    println("Go OS Boot Manager");
-    if installed_handle.is_some() {
-        println("1) Iniciar Go OS instalado");
+    println("Zenox OS Boot Manager");
+    
+    let mut next_option = 1u8;
+    if !installed_handles.is_empty() {
+        for (i, handle) in installed_handles.iter().copied().enumerate() {
+            let desc = installed_redux_handle_description(handle, i + 1);
+            println(alloc::format!("{}) {}", next_option, desc).as_str());
+            next_option = next_option.saturating_add(1);
+        }
     } else {
-        println("1) Iniciar Go OS");
+        println("1) Iniciar Zenox OS actual");
+        next_option = 2;
     }
-    let mut next_option = 2u8;
     if has_linux_guest {
-        println(alloc::format!("{} ) Iniciar Linux guest (apps Linux reales)", next_option).as_str());
+        println(alloc::format!("{}) Iniciar Linux guest (apps Linux reales)", next_option).as_str());
         next_option = next_option.saturating_add(1);
     }
     if has_other_os {
-        println(alloc::format!("{} ) Iniciar otro sistema operativo", next_option).as_str());
+        println(alloc::format!("{}) Iniciar otro sistema operativo", next_option).as_str());
     }
     if next_option > 2 || has_other_os {
         let max_opt = if has_other_os { next_option } else { next_option.saturating_sub(1) };
-        println(alloc::format!("Pulsa 1-{} (Enter=1).", max_opt).as_str());
+        println(alloc::format!("Pulsa 1-{} (Enter=actual, Esc=actual).", max_opt).as_str());
     } else {
-        println("Pulsa 1 (Enter=1).");
+        println("Pulsa 1 (Enter=actual, Esc=actual).");
     }
 
-    let choice = read_boot_selector_choice(has_linux_guest, has_other_os);
+    let default_redux_index = installed_handles
+        .iter()
+        .position(|handle| Some(*handle) == current_handle)
+        .unwrap_or(0);
+    let choice = read_boot_selector_choice(
+        has_linux_guest,
+        has_other_os,
+        installed_handles.len(),
+        default_redux_index,
+    );
     match choice {
-        BootSelectorChoice::BootRedux => {
-            if installed_handle.is_some() {
-                println("Arranque: Go OS instalado...");
-                match launch_installed_redux(current_handle) {
+        BootSelectorChoice::BootRedux(idx) => {
+            if !installed_handles.is_empty() {
+                let target_handle = installed_handles.get(idx).copied().or(installed_handles.first().copied());
+                if target_handle == current_handle {
+                    println(alloc::format!("Arranque: Zenox OS actual (Volumen {})...", idx + 1).as_str());
+                    uefi::boot::stall(350_000);
+                    clear_screen();
+                    return;
+                }
+                println(alloc::format!("Arranque: Zenox OS instalado (Volumen {})...", idx + 1).as_str());
+                match launch_installed_redux(target_handle) {
                     Ok(path) => println(alloc::format!("Arranque regresó desde {}.", path).as_str()),
                     Err(err) => {
                         println(alloc::format!("No se pudo arrancar instalado: {}", err).as_str());
@@ -408,31 +440,42 @@ fn maybe_auto_register_installed_boot_option() {
     }
 }
 
-fn read_boot_selector_choice(has_linux_guest: bool, has_other_os: bool) -> BootSelectorChoice {
+fn read_boot_selector_choice(
+    has_linux_guest: bool,
+    has_other_os: bool,
+    redux_count: usize,
+    default_redux_index: usize,
+) -> BootSelectorChoice {
     let mut waited_ticks = 0usize;
-    let timeout_ticks = 1000usize; // ~10s at 10ms polling
+    let timeout_ticks = 6000usize; // ~60s at 10ms polling
+    let redux_options = if redux_count > 0 { redux_count } else { 1 };
+    let default_redux_index = core::cmp::min(default_redux_index, redux_options.saturating_sub(1));
+    let guest_opt = redux_options + 1;
+    let other_opt = if has_linux_guest { guest_opt + 1 } else { guest_opt };
+
     loop {
         if let Some(event) = poll_input_event() {
             match event {
-                InputEvent::Char('1') | InputEvent::Enter | InputEvent::Escape => {
-                    return BootSelectorChoice::BootRedux
+                InputEvent::Enter | InputEvent::Escape => {
+                    return BootSelectorChoice::BootRedux(default_redux_index);
                 }
-                InputEvent::Char('2') => {
-                    if has_linux_guest {
-                        return BootSelectorChoice::BootLinuxGuest;
+                InputEvent::Char(c) => {
+                    if let Some(digit) = c.to_digit(10) {
+                        let opt = digit as usize;
+                        if opt > 0 && opt <= redux_options {
+                            return BootSelectorChoice::BootRedux(opt - 1);
+                        } else if opt == guest_opt && has_linux_guest {
+                            return BootSelectorChoice::BootLinuxGuest;
+                        } else if opt == other_opt && has_other_os {
+                            return BootSelectorChoice::BootOtherOs;
+                        }
                     }
-                    if has_other_os {
-                        return BootSelectorChoice::BootOtherOs;
-                    }
-                }
-                InputEvent::Char('3') if has_linux_guest && has_other_os => {
-                    return BootSelectorChoice::BootOtherOs
                 }
                 _ => {}
             }
         }
         if waited_ticks >= timeout_ticks {
-            return BootSelectorChoice::BootRedux;
+            return BootSelectorChoice::BootRedux(default_redux_index);
         }
         uefi::boot::stall(10_000);
         waited_ticks = waited_ticks.saturating_add(1);
@@ -466,7 +509,7 @@ fn handle_is_removable(handle: uefi::Handle) -> Option<bool> {
 }
 
 fn handle_has_installed_redux_marker(handle: uefi::Handle) -> bool {
-    for marker in [uefi::cstr16!("\\GOOS.INI"), uefi::cstr16!("\\REDUXOS.INI")] {
+    for marker in [uefi::cstr16!("\\GOOS.INI"), uefi::cstr16!("\\REDUXOS.INI"), uefi::cstr16!("\\ZENOXOS.INI")] {
         if let Some(bytes) = read_file_from_fs_handle(handle, marker) {
             let text = core::str::from_utf8(bytes.as_slice()).unwrap_or("");
             if text.contains("installed=1") || text.contains("INSTALLED=1") {
@@ -479,6 +522,7 @@ fn handle_has_installed_redux_marker(handle: uefi::Handle) -> bool {
         let text = core::str::from_utf8(bytes.as_slice()).unwrap_or("");
         if text.contains("Go OS installed on internal storage.")
             || text.contains("ReduxOS installed on internal storage.")
+            || text.contains("Zenox OS installed on internal storage.")
         {
             return true;
         }
@@ -510,12 +554,127 @@ fn select_boot_path_candidate<'a>(
         .copied()
 }
 
-fn find_installed_redux_handle(exclude: Option<uefi::Handle>) -> Option<uefi::Handle> {
+fn handle_partition_identity(handle: uefi::Handle) -> (Option<u32>, Option<u64>) {
+    use uefi::boot;
+    use uefi::proto::device_path::media::HardDrive;
+    use uefi::proto::device_path::DevicePath;
+
+    let params = uefi::boot::OpenProtocolParams {
+        handle,
+        agent: boot::image_handle(),
+        controller: None,
+    };
+
+    let Ok(dp) = (unsafe {
+        boot::open_protocol::<DevicePath>(params, uefi::boot::OpenProtocolAttributes::GetProtocol)
+    }) else {
+        return (None, None);
+    };
+
+    for node in dp.node_iter() {
+        if let Ok(hd) = <&HardDrive>::try_from(node) {
+            let part = hd.partition_number();
+            let start = hd.partition_start();
+            return (
+                if part > 0 { Some(part) } else { None },
+                if start > 0 { Some(start) } else { None },
+            );
+        }
+    }
+
+    (None, None)
+}
+
+fn read_install_marker_text(handle: uefi::Handle) -> Option<String> {
+    for marker in [uefi::cstr16!("\\ZENOXOS.INI"), uefi::cstr16!("\\GOOS.INI"), uefi::cstr16!("\\REDUXOS.INI")] {
+        let Some(bytes) = read_file_from_fs_handle(handle, marker) else {
+            continue;
+        };
+        let Ok(text) = core::str::from_utf8(bytes.as_slice()) else {
+            continue;
+        };
+        return Some(String::from(text));
+    }
+
+    None
+}
+
+fn install_marker_u64_value(handle: uefi::Handle, key: &str) -> Option<u64> {
+    let text = read_install_marker_text(handle)?;
+    for line in text.lines() {
+        let trimmed = line.trim();
+        let Some((left, right)) = trimmed.split_once('=') else {
+            continue;
+        };
+        if left.trim().eq_ignore_ascii_case(key) {
+            return right.trim().parse::<u64>().ok();
+        }
+    }
+
+    None
+}
+
+fn installed_redux_handle_description(handle: uefi::Handle, ordinal: usize) -> String {
+    let removable = handle_is_removable(handle).unwrap_or(false);
+    let media = if removable { "USB" } else { "INTERNO" };
+    let (partition_number, partition_start) = handle_partition_identity(handle);
+    let data_start = install_marker_u64_value(handle, "data_start_lba");
+
+    let mut out = alloc::format!("{} {} - {}", OS_BOOT_NAME, ordinal, media);
+    if let Some(part) = partition_number {
+        out.push_str(alloc::format!(" BOOT PART {}", part).as_str());
+    }
+    if let Some(start) = partition_start {
+        out.push_str(alloc::format!(" LBA {}", start).as_str());
+    } else if let Some(start) = install_marker_u64_value(handle, "boot_start_lba") {
+        out.push_str(alloc::format!(" BOOT LBA {}", start).as_str());
+    }
+    if let Some(start) = data_start {
+        if let Some(data_desc) = installed_data_partition_description(start) {
+            out.push_str(" -> ");
+            out.push_str(data_desc.as_str());
+        } else {
+            out.push_str(alloc::format!(" -> DATA LBA {}", start).as_str());
+        }
+    }
+    out
+}
+
+fn installed_data_partition_description(data_start_lba: u64) -> Option<String> {
+    let devices = crate::fat32::Fat32::detect_uefi_block_devices();
+    for dev in devices.iter() {
+        if dev.partition_start != data_start_lba {
+            continue;
+        }
+
+        let (partition_number, _) = handle_partition_identity(dev.handle);
+        let mut out = String::from("DATA");
+        if let Some(part) = partition_number {
+            out.push_str(alloc::format!(" PART {}", part).as_str());
+        }
+        out.push_str(alloc::format!(" LBA {}", dev.partition_start).as_str());
+        out.push_str(alloc::format!(" {}", dev.fs_kind.as_str()).as_str());
+
+        let label = fat_label_to_string(&dev.fat_volume_label);
+        if label.as_str() != "NO_LABEL" {
+            out.push(' ');
+            out.push_str(label.as_str());
+        }
+
+        return Some(out);
+    }
+
+    None
+}
+
+fn find_installed_redux_handles(exclude: Option<uefi::Handle>) -> Vec<uefi::Handle> {
     use uefi::boot;
     use uefi::proto::media::fs::SimpleFileSystem;
 
-    let handles = boot::find_handles::<SimpleFileSystem>().ok()?;
-    let mut fallback = None;
+    let mut out = Vec::new();
+    let Ok(handles) = boot::find_handles::<SimpleFileSystem>() else {
+        return out;
+    };
 
     for handle in handles.iter().copied() {
         if Some(handle) == exclude {
@@ -524,15 +683,27 @@ fn find_installed_redux_handle(exclude: Option<uefi::Handle>) -> Option<uefi::Ha
         if !handle_has_installed_redux_marker(handle) {
             continue;
         }
-        if handle_is_removable(handle) == Some(false) {
-            return Some(handle);
-        }
-        if fallback.is_none() {
-            fallback = Some(handle);
-        }
+        out.push(handle);
     }
 
-    fallback
+    out.sort_by(|a, b| {
+        let a_removable = handle_is_removable(*a).unwrap_or(true);
+        let b_removable = handle_is_removable(*b).unwrap_or(true);
+        if a_removable != b_removable {
+            return a_removable.cmp(&b_removable);
+        }
+
+        let (_, a_start) = handle_partition_identity(*a);
+        let (_, b_start) = handle_partition_identity(*b);
+        a_start.unwrap_or(u64::MAX).cmp(&b_start.unwrap_or(u64::MAX))
+    });
+
+    out
+}
+
+fn find_installed_redux_handle(exclude: Option<uefi::Handle>) -> Option<uefi::Handle> {
+    let handles = find_installed_redux_handles(exclude);
+    handles.into_iter().find(|h| handle_is_removable(*h) == Some(false)).or_else(|| find_installed_redux_handles(exclude).into_iter().next())
 }
 
 fn find_installed_redux_handle_with_retry(exclude: Option<uefi::Handle>) -> Option<uefi::Handle> {
@@ -629,7 +800,7 @@ fn build_forced_grub_config_payload(redux_path: &str, windows_path: Option<&str>
         "set timeout=8\r\n\
 set default=0\r\n\
 \r\n\
-menuentry \"Go OS\" {{\r\n\
+menuentry \"Zenox OS\" {{\r\n\
     if search --no-floppy --file --set=reduxroot {}; then\r\n\
         chainloader ($reduxroot){}\r\n\
         boot\r\n\
@@ -813,15 +984,15 @@ fn force_windows_boot_manager_to_redux() -> Result<String, String> {
 
     if backup_created {
         Ok(String::from(
-            "Fallback Microsoft aplicado: bootmgfw.efi ahora abre ReduxEFI (backup creado).",
+            "Fallback Microsoft aplicado: bootmgfw.efi ahora abre ZenoxEFI (backup creado).",
         ))
     } else if backup_exists {
         Ok(String::from(
-            "Fallback Microsoft aplicado: bootmgfw.efi ahora abre ReduxEFI (backup ya existia en ESP).",
+            "Fallback Microsoft aplicado: bootmgfw.efi ahora abre ZenoxEFI (backup ya existia en ESP).",
         ))
     } else {
         Ok(String::from(
-            "Fallback Microsoft aplicado: bootmgfw.efi ahora abre ReduxEFI (ESP sin backup previo).",
+            "Fallback Microsoft aplicado: bootmgfw.efi ahora abre ZenoxEFI (ESP sin backup previo).",
         ))
     }
 }
@@ -950,6 +1121,10 @@ fn start_image_from_handle<'a>(
     let mut last_error = String::from("no se encontro ejecutable EFI en destino");
 
     'candidate: for (path_cstr, path_label) in image_candidates.iter() {
+        if read_file_from_fs_handle(handle, *path_cstr).is_none() {
+            continue 'candidate;
+        }
+
         let mut path_vec: Vec<u8> = Vec::new();
         let full_path = {
             let Ok(device_path_proto) = boot::open_protocol_exclusive::<DevicePath>(handle) else {
@@ -1009,9 +1184,9 @@ fn start_image_from_handle<'a>(
     Err(last_error)
 }
 
-fn launch_installed_redux(current_handle: Option<uefi::Handle>) -> core::result::Result<&'static str, String> {
-    let Some(handle) = find_installed_redux_handle(current_handle) else {
-        return Err(String::from("no se detecto Go OS instalado en otro volumen"));
+fn launch_installed_redux(target_handle: Option<uefi::Handle>) -> core::result::Result<&'static str, String> {
+    let Some(handle) = target_handle else {
+        return Err(String::from("no se detecto Zenox OS instalado en otro volumen"));
     };
 
     let candidates: [(&uefi::CStr16, &'static str); 8] = [
@@ -1344,11 +1519,17 @@ fn find_redux_boot_option_id() -> Result<Option<u16>, String> {
 
         let desc = extract_boot_option_description(raw.as_slice()).unwrap_or_default();
         let desc_lower = desc.to_ascii_lowercase();
-        if desc_lower.contains("redux") || desc_lower.contains("go os") || desc_lower.contains("goos") {
+        if desc_lower.contains("zenox")
+            || desc_lower.contains("zeno os")
+            || desc_lower.contains("redux")
+            || desc_lower.contains("go os")
+            || desc_lower.contains("goos")
+        {
             return Ok(Some(id));
         }
 
         if contains_ascii_utf16_case_insensitive(raw.as_slice(), "redux64.efi")
+            || contains_ascii_utf16_case_insensitive(raw.as_slice(), "zenox")
             || contains_ascii_utf16_case_insensitive(raw.as_slice(), "\\efi\\goos\\bootx64.efi")
             || contains_ascii_utf16_case_insensitive(raw.as_slice(), "\\efi\\reduxos\\bootx64.efi")
         {
@@ -1369,6 +1550,70 @@ fn find_redux_boot_option_id() -> Result<Option<u16>, String> {
     Ok(None)
 }
 
+fn boot_option_is_legacy_redux_family(raw: &[u8], desc_lower: &str) -> bool {
+    if desc_lower.contains("go os")
+        || desc_lower.contains("goos")
+        || desc_lower.contains("redux")
+        || desc_lower.contains("zenox")
+        || desc_lower.contains("zeno os")
+    {
+        return true;
+    }
+
+    contains_ascii_utf16_case_insensitive(raw, "redux64.efi")
+        || contains_ascii_utf16_case_insensitive(raw, "zenox")
+        || contains_ascii_utf16_case_insensitive(raw, "\\efi\\goos\\")
+        || contains_ascii_utf16_case_insensitive(raw, "\\efi\\reduxos\\")
+}
+
+fn extract_boot_option_optional_data(data: &[u8]) -> Option<&[u8]> {
+    let path = extract_boot_option_file_path(data)?;
+    let path_start = path.as_ptr() as usize - data.as_ptr() as usize;
+    let optional_start = path_start.checked_add(path.len())?;
+    if optional_start > data.len() {
+        return None;
+    }
+    Some(&data[optional_start..])
+}
+
+fn maybe_rename_legacy_redux_boot_options() {
+    let vendor = uefi::runtime::VariableVendor::GLOBAL_VARIABLE;
+
+    for key_result in uefi::runtime::variable_keys() {
+        let Ok(key) = key_result else {
+            continue;
+        };
+        if key.vendor != vendor {
+            continue;
+        }
+        let name: String = String::from(&key.name);
+        let Some(id) = parse_boot_option_id_from_name(name.as_str()) else {
+            continue;
+        };
+
+        let Ok((raw_box, _attrs)) = uefi::runtime::get_variable_boxed(key.name.as_ref(), &vendor) else {
+            continue;
+        };
+        let raw = raw_box.as_ref();
+        let desc = extract_boot_option_description(raw).unwrap_or_default();
+        let desc_lower = desc.to_ascii_lowercase();
+        if desc.as_str() == OS_BOOT_NAME || !boot_option_is_legacy_redux_family(raw, desc_lower.as_str()) {
+            continue;
+        }
+
+        let Some(path) = extract_boot_option_file_path(raw) else {
+            continue;
+        };
+        let optional = extract_boot_option_optional_data(raw).unwrap_or(&[]);
+        let Ok(updated) = build_boot_load_option(OS_BOOT_NAME, path, optional) else {
+            continue;
+        };
+        if write_boot_option_variable(id, updated.as_slice()).is_ok() {
+            println(alloc::format!("Entrada UEFI renombrada: Boot{:04X} -> {}", id, OS_BOOT_NAME).as_str());
+        }
+    }
+}
+
 fn maybe_ensure_redux_boot_priority() {
     let Ok(Some(redux_id)) = find_redux_boot_option_id() else {
         return;
@@ -1384,7 +1629,7 @@ fn ensure_installed_boot_option_registered() -> Result<String, String> {
             reconnect_storage_controllers();
             uefi::boot::stall(150_000);
             find_installed_redux_handle(current_handle)
-                .ok_or_else(|| String::from("no se detecto instalacion interna de Go OS"))?
+                .ok_or_else(|| String::from("no se detecto instalacion interna de Zenox OS"))?
         }
     };
 
@@ -1411,17 +1656,19 @@ fn ensure_installed_boot_option_registered() -> Result<String, String> {
 
     let file_dp = build_file_device_path_bytes(target_handle, selected.0)?;
     if let Some(existing_id) = find_existing_boot_option_for_path(file_dp.as_slice())? {
+        let updated = build_boot_load_option(OS_BOOT_NAME, file_dp.as_slice(), &[])?;
+        write_boot_option_variable(existing_id, updated.as_slice())?;
         ensure_boot_order_contains(existing_id)?;
         let _ = write_boot_next(existing_id);
         return Ok(alloc::format!(
-            "Entrada UEFI existente lista: Boot{:04X} ({})",
+            "Entrada UEFI existente actualizada: Boot{:04X} ({})",
             existing_id,
             selected.1
         ));
     }
 
     let free_id = find_free_boot_option_id()?;
-    let load_option = build_boot_load_option("Go OS", file_dp.as_slice(), &[])?;
+    let load_option = build_boot_load_option(OS_BOOT_NAME, file_dp.as_slice(), &[])?;
     write_boot_option_variable(free_id, load_option.as_slice())?;
     ensure_boot_order_contains(free_id)?;
     let _ = write_boot_next(free_id);
@@ -1703,6 +1950,8 @@ fn handle_command(cmd: &str, fat: &mut crate::fat32::Fat32, current_cluster: &mu
         println("  idt            - IDT skeleton info");
         println("  tick           - timer/uptime info");
         println("  sched          - scheduler stats");
+        println("  acpi           - ACPI S3 suspend diagnostics");
+        println("  suspend        - try ACPI S3 suspend");
         println("  step           - run +100 virtual ticks");
         println("  format         - format virtual disk as FAT32");
         println("  boot           - exit boot services and start IRQ-safe runtime (auto fallback)");
@@ -1716,8 +1965,8 @@ fn handle_command(cmd: &str, fat: &mut crate::fat32::Fat32, current_cluster: &mu
         println("  gui            - enter windowed desktop mode");
         println("  installer      - open graphical pre-boot installer");
         println("  disks          - list UEFI BlockIO devices (USB/NVMe/HDD)");
-        println("  vols           - list mountable FAT32 volumes");
-        println("  mount <n>      - mount FAT32 from BlockIO device index in 'disks'");
+        println("  vols           - list mountable FAT32/exFAT volumes");
+        println("  mount <n>      - mount FAT32/exFAT from BlockIO device index in 'disks'");
         println("  cppdoom        - launch CPP-DOOM native GUI app");
         println("  shell          - chainload external UEFI Shell image (SHELLX64.EFI)");
         println("  linux guest    - chainload Linux guest EFI loader (ruta 2: compat Linux real)");
@@ -1733,6 +1982,23 @@ fn handle_command(cmd: &str, fat: &mut crate::fat32::Fat32, current_cluster: &mu
         println("  wifi connect <ssid> <clave> - save profile and connect");
         println("  wifi disconnect - disconnect WiFi");
         println("  wifi failover <ethernet|wifi|status> - set automatic priority");
+        return;
+    }
+
+    if cmd == "acpi" || cmd == "power acpi" {
+        println(crate::acpi::s3_status_line().as_str());
+        return;
+    }
+
+    if cmd == "suspend" || cmd == "sleep" {
+        println("Attempting ACPI S3 suspend...");
+        match crate::acpi::try_suspend_to_ram() {
+            Ok(()) => println("ACPI S3 returned from wake."),
+            Err(err) => {
+                println("ACPI S3 failed:");
+                println(err);
+            }
+        }
         return;
     }
 
@@ -1797,7 +2063,7 @@ fn handle_command(cmd: &str, fat: &mut crate::fat32::Fat32, current_cluster: &mu
     }
 
     if cmd == "about" {
-        println("Go OS Phase 1 kernel prototype");
+        println("Zenox OS Phase 1 kernel prototype");
         println("Includes: memory + idt + timer + scheduler + syscall table");
         println("Runtime path: EBS + PIT IRQ + GOP desktop + userspace shell");
         return;
@@ -2822,6 +3088,61 @@ pub(crate) fn restore_gui_after_external_app() -> bool {
     true
 }
 
+pub(crate) fn restore_gui_after_s3_resume() -> bool {
+    unsafe { crate::hal::outb(0x80, 0xC4); }
+    uefi::boot::stall(250_000);
+
+    let handle = match uefi::boot::get_handle_for_protocol::<GraphicsOutput>() {
+        Ok(h) => h,
+        Err(_) => {
+            unsafe { crate::hal::outb(0x80, 0xE4); }
+            return restore_gui_after_external_app();
+        }
+    };
+
+    let mut restored_gop = false;
+    if let Ok(mut gop) = uefi::boot::open_protocol_exclusive::<GraphicsOutput>(handle) {
+        let current = gop.current_mode_info();
+        let current_resolution = current.resolution();
+        let current_format = current.pixel_format();
+        let current_stride = current.stride();
+        let mut selected = None;
+        for mode in gop.modes() {
+            let info = mode.info();
+            if info.resolution() == current_resolution
+                && info.pixel_format() == current_format
+                && info.stride() == current_stride
+            {
+                selected = Some(mode);
+                break;
+            }
+        }
+
+        if let Some(mode) = selected {
+            unsafe { crate::hal::outb(0x80, 0xC5); }
+            restored_gop = gop.set_mode(&mode).is_ok();
+        }
+    }
+
+    unsafe { crate::hal::outb(0x80, if restored_gop { 0xC6 } else { 0xE6 }); }
+    uefi::boot::stall(250_000);
+
+    let Some(info) = capture_framebuffer_info() else {
+        unsafe { crate::hal::outb(0x80, 0xE7); }
+        return false;
+    };
+
+    framebuffer::init(info);
+    let _ = framebuffer::enable_backbuffer();
+    input::set_screen_dimensions(info.width as u32, info.height as u32);
+    uefi::system::with_stdin(|stdin| {
+        let _ = stdin.reset(false);
+    });
+    input::reset_mouse_uefi();
+    unsafe { crate::hal::outb(0x80, 0xC7); }
+    true
+}
+
 fn fat_label_to_string(label: &[u8; 11]) -> String {
     let mut end = label.len();
     while end > 0 && label[end - 1] == b' ' {
@@ -2862,43 +3183,48 @@ fn handle_fs_command(cmd: &str, fat: &mut crate::fat32::Fat32, current_cluster: 
             with_stdout(|out| {
                 let _ = writeln!(
                     out,
-                    "  [{}] {} {}  {} MiB  fs={}",
+                    "  [{}] {} {}  {} MiB  fs={}  lba={}",
                     dev.index,
                     media,
                     scope,
                     dev.total_mib,
-                    fs
+                    fs,
+                    dev.partition_start
                 );
             });
         }
-        println("Use 'mount <index>' only on entries with fs=FAT32.");
+        println("Use 'mount <index>' only on entries with fs=FAT32 or fs=EXFAT.");
         return true;
     }
 
     if cmd == "vols" {
-        let volumes = crate::fat32::Fat32::detect_uefi_fat_volumes();
-        if volumes.is_empty() {
-            println("No FAT32 volumes detected on UEFI BlockIO (USB/NVMe/HDD).");
-            return true;
-        }
-
-        println("Detected FAT32 volumes:");
-        for vol in volumes.iter() {
-            let media = if vol.removable { "USB" } else { "NVME/HDD" };
-            let scope = if vol.logical_partition { "part" } else { "disk" };
-            let label = fat_label_to_string(&vol.volume_label);
+        let devices = crate::fat32::Fat32::detect_uefi_block_devices();
+        let mut shown = 0usize;
+        for dev in devices.iter() {
+            if !dev.fs_kind.is_mountable() {
+                continue;
+            }
+            if shown == 0 {
+                println("Detected FAT32/exFAT volumes:");
+            }
+            shown = shown.saturating_add(1);
+            let media = if dev.removable { "USB" } else { "NVME/HDD" };
+            let scope = if dev.logical_partition { "part" } else { "disk" };
             with_stdout(|out| {
                 let _ = writeln!(
                     out,
-                    "  [{}] {} {}  {} MiB  label='{}'  start_lba={}",
-                    vol.index,
+                    "  [{}] {} {}  {} MiB  fs={}  lba={}",
+                    dev.index,
                     media,
                     scope,
-                    vol.total_mib,
-                    label,
-                    vol.partition_start
+                    dev.total_mib,
+                    dev.fs_kind.as_str(),
+                    dev.partition_start
                 );
             });
+        }
+        if shown == 0 {
+            println("No FAT32/exFAT volumes detected on UEFI BlockIO (USB/NVMe/HDD).");
         }
         return true;
     }
@@ -2988,7 +3314,7 @@ fn handle_fs_command(cmd: &str, fat: &mut crate::fat32::Fat32, current_cluster: 
     if let Some(dir_name) = cmd.strip_prefix("cd ") {
          // Init check
          if fat.bytes_per_sector == 0 {
-             if !fat.init() { println("FAT32 Init Failed"); return true; }
+             if !fat.init() { println("FAT32/exFAT Init Failed"); return true; }
              *current_cluster = fat.root_cluster;
          }
 
@@ -3047,7 +3373,7 @@ fn handle_fs_command(cmd: &str, fat: &mut crate::fat32::Fat32, current_cluster: 
 
     if let Some(filename) = cmd.strip_prefix("cat ") {
         if fat.bytes_per_sector == 0 {
-             if !fat.init() { println("FAT32 Init Failed"); return true; }
+             if !fat.init() { println("FAT32/exFAT Init Failed"); return true; }
              *current_cluster = fat.root_cluster;
         }
 
@@ -3859,13 +4185,15 @@ fn start_gui_mode() -> ! {
             }
         }
 
-        crate::net::poll();
-        compositor.service_background_tasks();
+        if !compositor.is_suspended() {
+            crate::net::poll();
+            compositor.service_background_tasks();
 
-        // Periodic repaint every ~16ms for background services
-        // (terminal streams, linux runloop, copy progress, heartbeat)
-        if _frame_count % 16 == 0 {
-            compositor.mark_dirty();
+            // Periodic repaint every ~16ms for background services
+            // (terminal streams, linux runloop, copy progress, heartbeat)
+            if _frame_count % 16 == 0 {
+                compositor.mark_dirty();
+            }
         }
 
         // 4. Paint — only when something changed
@@ -3873,7 +4201,7 @@ fn start_gui_mode() -> ! {
             compositor.paint();
 
             // 5. Heartbeat (Blinking dot in corner to show system is alive)
-            if _frame_count % 30 < 15 {
+            if !compositor.is_suspended() && _frame_count % 30 < 15 {
                 framebuffer::rect(0, 0, 8, 8, 0x00FF00); // Green heartbeat
             }
         }
@@ -3892,7 +4220,9 @@ fn start_gui_mode() -> ! {
         if mouse_boost_frames > 0 {
             mouse_boost_frames = mouse_boost_frames.saturating_sub(1);
         }
-        let frame_stall_us = if interactive {
+        let frame_stall_us = if compositor.is_suspended() {
+            DESKTOP_SUSPEND_STALL_US
+        } else if interactive {
             (desktop_frame_stall_us / 4).max(DESKTOP_FRAME_STALL_US_INTERACTIVE_MIN)
         } else {
             desktop_frame_stall_us

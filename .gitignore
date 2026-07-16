@@ -26,3 +26,12 @@
 
 # Zip files
 *.zip
+
+# Media files
+*.mp4
+*.rpv
+
+# Temp and IDE files
+.idea/
+__pycache__/
+scratch/

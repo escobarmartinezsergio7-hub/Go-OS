@@ -1,0 +1,5 @@
+fn on_start() {
+  log("linux-wayland-gtk-demo instalado.");
+  log("Terminal: linux inspect /GTKWLDMO.BIN");
+  log("Terminal: linux runloop startx /GTKWLDMO.BIN");
+}

@@ -5,38 +5,49 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 PARTITION=""
+DATA_PARTITION=""
 EFI_SOURCE="${ROOT_DIR}/build/esp/EFI/BOOT/BOOTX64.EFI"
 LINUXRT_SOURCE="${ROOT_DIR}/build/esp/LINUXRT"
 LINUX_GUEST_SOURCE="${ROOT_DIR}/build/esp/EFI/LINUX"
-LABEL="REDUXEFI"
+LABEL="ZENOX OS"
+DATA_LABEL="ZENOX DATA"
 MOUNT_DIR=""
+DATA_MOUNT_DIR=""
 ASSUME_YES=0
 DRY_RUN=0
 TEMP_MOUNT_DIR=0
+TEMP_DATA_MOUNT_DIR=0
 MOUNTED_BY_SCRIPT=0
+DATA_MOUNTED_BY_SCRIPT=0
 LINUXRT_INSTALLED=0
 LINUX_GUEST_INSTALLED=0
+EXFAT_MKFS_TOOL=""
 
 usage() {
   cat <<USAGE
 Usage:
   bash scripts/install_nvme.sh --partition /dev/nvme0n1pX [options]
+  bash scripts/install_nvme.sh --partition /dev/nvme0n1pX --data-partition /dev/nvme0n1pY [options]
 
 Options:
   --partition, -p   NVMe partition to erase and install to (required)
+                    This partition is formatted FAT32 and receives EFI/boot files.
+  --data-partition  Optional second NVMe partition to format as exFAT for large data files
   --efi-source      Path to BOOTX64.EFI (default: build/esp/EFI/BOOT/BOOTX64.EFI)
   --linuxrt-source  Path to local LINUXRT folder (default: build/esp/LINUXRT)
   --linux-guest-source Path to local EFI/LINUX folder (default: build/esp/EFI/LINUX)
-  --label           FAT32 label (default: REDUXEFI)
+  --label           FAT32 label (default: ZENOX OS)
+  --data-label      exFAT data label (default: ZENOX DATA)
   --mount-point     Mount directory (default: auto temp dir)
+  --data-mount-point Mount directory for data partition (default: auto temp dir)
   --yes, -y         Skip interactive confirmation
   --dry-run         Print actions without changing disks
   --help, -h        Show this help
 
 Notes:
-  - Linux only (uses lsblk/findmnt/mount/mkfs.fat).
-  - The target must be an existing internal NVMe partition.
-  - This operation destroys all data in the selected partition.
+  - Linux only (uses lsblk/findmnt/mount/mkfs.fat; exFAT needs mkfs.exfat or mkexfatfs).
+  - Targets must be existing internal NVMe partitions.
+  - This operation destroys all data in selected partition(s).
 USAGE
 }
 
@@ -79,9 +90,15 @@ cleanup() {
   if [ "$MOUNTED_BY_SCRIPT" -eq 1 ] && [ -n "$MOUNT_DIR" ]; then
     as_root umount "$MOUNT_DIR" || true
   fi
+  if [ "$DATA_MOUNTED_BY_SCRIPT" -eq 1 ] && [ -n "$DATA_MOUNT_DIR" ]; then
+    as_root umount "$DATA_MOUNT_DIR" || true
+  fi
 
   if [ "$TEMP_MOUNT_DIR" -eq 1 ] && [ -n "$MOUNT_DIR" ] && [ -d "$MOUNT_DIR" ]; then
     run_cmd rmdir "$MOUNT_DIR" || true
+  fi
+  if [ "$TEMP_DATA_MOUNT_DIR" -eq 1 ] && [ -n "$DATA_MOUNT_DIR" ] && [ -d "$DATA_MOUNT_DIR" ]; then
+    run_cmd rmdir "$DATA_MOUNT_DIR" || true
   fi
 }
 trap cleanup EXIT
@@ -90,6 +107,10 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --partition|-p)
       PARTITION="${2:-}"
+      shift 2
+      ;;
+    --data-partition)
+      DATA_PARTITION="${2:-}"
       shift 2
       ;;
     --efi-source)
@@ -108,8 +129,16 @@ while [ $# -gt 0 ]; do
       LABEL="${2:-}"
       shift 2
       ;;
+    --data-label)
+      DATA_LABEL="${2:-}"
+      shift 2
+      ;;
     --mount-point)
       MOUNT_DIR="${2:-}"
+      shift 2
+      ;;
+    --data-mount-point)
+      DATA_MOUNT_DIR="${2:-}"
       shift 2
       ;;
     --yes|-y)
@@ -158,6 +187,17 @@ else
   exit 1
 fi
 
+if [ -n "$DATA_PARTITION" ]; then
+  if command -v mkfs.exfat >/dev/null 2>&1; then
+    EXFAT_MKFS_TOOL="mkfs.exfat"
+  elif command -v mkexfatfs >/dev/null 2>&1; then
+    EXFAT_MKFS_TOOL="mkexfatfs"
+  else
+    echo "[error] Missing mkfs.exfat/mkexfatfs. Install exfatprogs or exfat-utils." >&2
+    exit 1
+  fi
+fi
+
 if [ ! -f "$EFI_SOURCE" ]; then
   echo "[error] EFI file not found: $EFI_SOURCE" >&2
   echo "Build first: make uefi" >&2
@@ -176,8 +216,24 @@ if [[ ! "$PARTITION" =~ ^/dev/nvme[0-9]+n[0-9]+p[0-9]+$ ]]; then
   exit 1
 fi
 
+if [ -n "$DATA_PARTITION" ] && [[ ! "$DATA_PARTITION" =~ ^/dev/nvme[0-9]+n[0-9]+p[0-9]+$ ]]; then
+  echo "[error] Refusing non-NVMe data partition path: $DATA_PARTITION" >&2
+  echo "        Expected format: /dev/nvme0n1p5" >&2
+  exit 1
+fi
+
+if [ -n "$DATA_PARTITION" ] && [ "$DATA_PARTITION" = "$PARTITION" ]; then
+  echo "[error] Data partition must be different from boot partition." >&2
+  exit 1
+fi
+
 if [ ! -b "$PARTITION" ]; then
   echo "[error] Not a block device: $PARTITION" >&2
+  exit 1
+fi
+
+if [ -n "$DATA_PARTITION" ] && [ ! -b "$DATA_PARTITION" ]; then
+  echo "[error] Data partition is not a block device: $DATA_PARTITION" >&2
   exit 1
 fi
 
@@ -187,10 +243,27 @@ if [ "$part_type" != "part" ]; then
   exit 1
 fi
 
+if [ -n "$DATA_PARTITION" ]; then
+  data_part_type="$(lsblk -no TYPE "$DATA_PARTITION" 2>/dev/null | head -n1 | tr -d '[:space:]')"
+  if [ "$data_part_type" != "part" ]; then
+    echo "[error] Data target is not a partition: $DATA_PARTITION" >&2
+    exit 1
+  fi
+fi
+
 parent_disk="$(lsblk -no PKNAME "$PARTITION" 2>/dev/null | head -n1 | tr -d '[:space:]')"
 if [ -z "$parent_disk" ] || [[ ! "$parent_disk" =~ ^nvme[0-9]+n[0-9]+$ ]]; then
   echo "[error] Could not validate NVMe parent disk for: $PARTITION" >&2
   exit 1
+fi
+
+if [ -n "$DATA_PARTITION" ]; then
+  data_parent_disk="$(lsblk -no PKNAME "$DATA_PARTITION" 2>/dev/null | head -n1 | tr -d '[:space:]')"
+  if [ "$data_parent_disk" != "$parent_disk" ]; then
+    echo "[error] Data partition must be on the same NVMe disk as boot partition." >&2
+    echo "        boot parent=/dev/${parent_disk}, data parent=/dev/${data_parent_disk:-unknown}" >&2
+    exit 1
+  fi
 fi
 
 rm_flag="$(lsblk -ndo RM "/dev/${parent_disk}" 2>/dev/null | head -n1 | tr -d '[:space:]')"
@@ -202,6 +275,10 @@ fi
 root_source="$(findmnt -n -o SOURCE / 2>/dev/null || true)"
 if [ -n "$root_source" ] && [ "$root_source" = "$PARTITION" ]; then
   echo "[error] Refusing to format currently mounted root partition: $PARTITION" >&2
+  exit 1
+fi
+if [ -n "$DATA_PARTITION" ] && [ -n "$root_source" ] && [ "$root_source" = "$DATA_PARTITION" ]; then
+  echo "[error] Refusing to format currently mounted root partition: $DATA_PARTITION" >&2
   exit 1
 fi
 
@@ -217,8 +294,26 @@ if [ -n "$mounted_targets" ]; then
   done <<< "$mounted_targets"
 fi
 
+data_mounted_targets=""
+if [ -n "$DATA_PARTITION" ]; then
+  data_mounted_targets="$(findmnt -rn -o TARGET --source "$DATA_PARTITION" 2>/dev/null || true)"
+  if [ -n "$data_mounted_targets" ]; then
+    while IFS= read -r target; do
+      case "$target" in
+        /|/boot|/boot/efi)
+          echo "[error] Refusing to touch active boot/system mount: $target" >&2
+          exit 1
+          ;;
+      esac
+    done <<< "$data_mounted_targets"
+  fi
+fi
+
 echo "Target partition : $PARTITION"
 echo "Parent NVMe disk : /dev/${parent_disk}"
+if [ -n "$DATA_PARTITION" ]; then
+  echo "Data partition   : $DATA_PARTITION"
+fi
 echo "EFI source       : $EFI_SOURCE"
 echo "LINUXRT source   : $LINUXRT_SOURCE"
 if [ -d "$LINUX_GUEST_SOURCE" ]; then
@@ -227,12 +322,24 @@ else
   echo "Linux guest src  : (not found, skipping)"
 fi
 echo "FAT32 label      : $LABEL"
+if [ -n "$DATA_PARTITION" ]; then
+  echo "exFAT data label : $DATA_LABEL"
+fi
 echo
-echo "WARNING: this will ERASE all data on $PARTITION"
+if [ -n "$DATA_PARTITION" ]; then
+  echo "WARNING: this will ERASE all data on $PARTITION and $DATA_PARTITION"
+else
+  echo "WARNING: this will ERASE all data on $PARTITION"
+fi
 
 if [ "$ASSUME_YES" -ne 1 ]; then
-  read -r -p "Type exactly 'ERASE $PARTITION' to continue: " confirm
-  if [ "$confirm" != "ERASE $PARTITION" ]; then
+  if [ -n "$DATA_PARTITION" ]; then
+    confirm_phrase="ERASE $PARTITION $DATA_PARTITION"
+  else
+    confirm_phrase="ERASE $PARTITION"
+  fi
+  read -r -p "Type exactly '$confirm_phrase' to continue: " confirm
+  if [ "$confirm" != "$confirm_phrase" ]; then
     echo "Aborted."
     exit 1
   fi
@@ -242,6 +349,10 @@ if [ -n "$mounted_targets" ]; then
   echo "Unmounting existing mounts for $PARTITION ..."
   as_root umount "$PARTITION"
 fi
+if [ -n "$DATA_PARTITION" ] && [ -n "$data_mounted_targets" ]; then
+  echo "Unmounting existing mounts for $DATA_PARTITION ..."
+  as_root umount "$DATA_PARTITION"
+fi
 
 if [ -z "$MOUNT_DIR" ]; then
   MOUNT_DIR="$(mktemp -d /tmp/reduxos-installer.XXXXXX)"
@@ -249,13 +360,32 @@ if [ -z "$MOUNT_DIR" ]; then
 else
   run_cmd mkdir -p "$MOUNT_DIR"
 fi
+if [ -n "$DATA_PARTITION" ]; then
+  if [ -z "$DATA_MOUNT_DIR" ]; then
+    DATA_MOUNT_DIR="$(mktemp -d /tmp/reduxos-data.XXXXXX)"
+    TEMP_DATA_MOUNT_DIR=1
+  else
+    run_cmd mkdir -p "$DATA_MOUNT_DIR"
+  fi
+fi
 
 echo "Formatting $PARTITION as FAT32 ..."
 as_root "$MKFS_TOOL" -F 32 -n "$LABEL" "$PARTITION"
 
+if [ -n "$DATA_PARTITION" ]; then
+  echo "Formatting $DATA_PARTITION as exFAT ..."
+  as_root "$EXFAT_MKFS_TOOL" -n "$DATA_LABEL" "$DATA_PARTITION"
+fi
+
 echo "Mounting partition to $MOUNT_DIR ..."
 as_root mount "$PARTITION" "$MOUNT_DIR"
 MOUNTED_BY_SCRIPT=1
+
+if [ -n "$DATA_PARTITION" ]; then
+  echo "Mounting data partition to $DATA_MOUNT_DIR ..."
+  as_root mount "$DATA_PARTITION" "$DATA_MOUNT_DIR"
+  DATA_MOUNTED_BY_SCRIPT=1
+fi
 
 echo "Installing EFI payload ..."
 as_root mkdir -p "$MOUNT_DIR/EFI/BOOT"
@@ -268,10 +398,10 @@ else
 fi
 
 if [ "$DRY_RUN" -eq 1 ]; then
-  echo "+ write REDUXOS.INI -> $MOUNT_DIR/REDUXOS.INI"
+  echo "+ write ZENOXOS.INI -> $MOUNT_DIR/ZENOXOS.INI"
 else
-  cat <<'EOF' | as_root tee "$MOUNT_DIR/REDUXOS.INI" >/dev/null
-[reduxos]
+cat <<'EOF' | as_root tee "$MOUNT_DIR/ZENOXOS.INI" >/dev/null
+[zenox]
 installed=1
 autoboot=gui
 boot_efi=\EFI\BOOT\BOOTX64.EFI
@@ -282,7 +412,7 @@ if [ "$DRY_RUN" -eq 1 ]; then
   echo "+ write README.TXT -> $MOUNT_DIR/README.TXT"
 else
   cat <<'EOF' | as_root tee "$MOUNT_DIR/README.TXT" >/dev/null
-ReduxOS installed on internal NVMe partition.
+Zenox OS installed on internal NVMe partition.
 Boot file: \EFI\BOOT\BOOTX64.EFI
 EOF
 fi
@@ -307,16 +437,44 @@ if [ -d "$LINUX_GUEST_SOURCE" ]; then
   LINUX_GUEST_INSTALLED=1
 fi
 
+if [ -n "$DATA_PARTITION" ]; then
+  echo "Initializing exFAT data partition ..."
+  if [ "$DRY_RUN" -eq 1 ]; then
+    echo "+ mkdir -p $DATA_MOUNT_DIR/Videos $DATA_MOUNT_DIR/Downloads $DATA_MOUNT_DIR/Documents"
+    echo "+ write DATA_README.TXT -> $DATA_MOUNT_DIR/DATA_README.TXT"
+  else
+    as_root mkdir -p "$DATA_MOUNT_DIR/Videos" "$DATA_MOUNT_DIR/Downloads" "$DATA_MOUNT_DIR/Documents"
+    cat <<EOF | as_root tee "$DATA_MOUNT_DIR/DATA_README.TXT" >/dev/null
+Zenox OS data partition.
+Filesystem: exFAT
+Purpose: large media/files that do not fit FAT32's 4 GiB file limit.
+
+Boot/system partition: $PARTITION ($LABEL, FAT32)
+Data partition: $DATA_PARTITION ($DATA_LABEL, exFAT)
+EOF
+  fi
+fi
+
 as_root sync
+if [ -n "$DATA_PARTITION" ]; then
+  as_root umount "$DATA_MOUNT_DIR"
+  DATA_MOUNTED_BY_SCRIPT=0
+fi
 as_root umount "$MOUNT_DIR"
 MOUNTED_BY_SCRIPT=0
 
+if [ "$TEMP_DATA_MOUNT_DIR" -eq 1 ]; then
+  run_cmd rmdir "$DATA_MOUNT_DIR"
+fi
 if [ "$TEMP_MOUNT_DIR" -eq 1 ]; then
   run_cmd rmdir "$MOUNT_DIR"
 fi
 
 echo "Install complete."
 echo "UEFI file installed at: $PARTITION:/EFI/BOOT/BOOTX64.EFI"
+if [ -n "$DATA_PARTITION" ]; then
+  echo "Data partition formatted at: $DATA_PARTITION ($DATA_LABEL, exFAT)"
+fi
 if [ "$LINUXRT_INSTALLED" -eq 1 ]; then
   echo "LINUXRT installed from: $LINUXRT_SOURCE"
 fi

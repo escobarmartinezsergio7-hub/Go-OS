@@ -15,6 +15,10 @@ pub struct DirEntry {
     pub file_type: FileType,
     pub cluster: u32,
     pub valid: bool,
+    pub create_date: u16,
+    pub create_time: u16,
+    pub write_date: u16,
+    pub write_time: u16,
 }
 
 impl DirEntry {
@@ -27,6 +31,10 @@ impl DirEntry {
             file_type: FileType::File,
             cluster: 0,
             valid: false,
+            create_date: 0,
+            create_time: 0,
+            write_date: 0,
+            write_time: 0,
         }
     }
 

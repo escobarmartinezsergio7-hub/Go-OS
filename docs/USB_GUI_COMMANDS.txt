@@ -1,0 +1,50 @@
+REDUXOS - GUI/Terminal command examples
+
+1) Ver paquetes .RPX en la USB:
+ls
+
+2) Instalar ejemplos (usa nombres 8.3 al final):
+install HELLO_REDUX.RPX HELLO
+install LINUX_X11_DEMO.RPX LX11
+install LX11ANIM.RPX LX11ANIM
+install LX11DYN.RPX LX11DYN
+install LINUX_SANDBOX_SMOKE.RPX LSBX
+
+3) Ver contenido instalado:
+cat HELLO.LST
+cat LX11.LST
+cat LX11ANIM.LST
+cat LX11DYN.LST
+
+4) Inspeccionar ELF antes de correr:
+linux inspect /LX11/LX110001.BIN
+linux inspect /LX11ANIM/LX110001.BIN
+linux inspect /LX11DYN/LX110001.BIN
+
+5) Ejecutar (runloop no bloqueante):
+linux runloop start /LX11/LX110001.BIN
+linux runloop startx /LX11ANIM/LX110001.BIN
+linux runloop startx /LX11DYN/LX110001.BIN
+linux runloop status
+
+6) Detener ejecución Linux:
+linux runloop stop
+
+7) Demos Wayland precompilados (sin compilar en host Linux):
+linux inspect /GTKWLDMO.BIN
+linux runloop startx /GTKWLDMO.BIN
+linux inspect /QTWLDMO.BIN
+linux runloop startx /QTWLDMO.BIN
+
+8) Instalar demos Wayland como paquetes RPX (opcional):
+install GTKWLDMO.RPX GTKWLDMO
+install QTWLDMO.RPX QTWLDMO
+cat GTKWLDMO.LST
+cat QTWLDMO.LST
+# Usa la ruta .BIN que aparezca en cada .LST:
+# linux runloop startx /GTKWLDMO/<archivo>.BIN
+# linux runloop startx /QTWLDMO/<archivo>.BIN
+
+Nota:
+- Si no existen GTKWLDMO.BIN / QTWLDMO.BIN en la USB, correr desde host:
+  bash scripts/stage_wayland_demo_bins.sh /Volumes/GOOS

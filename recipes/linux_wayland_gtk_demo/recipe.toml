@@ -1,0 +1,18 @@
+[package]
+id = "linux-wayland-gtk-demo"
+name = "Linux Wayland GTK Demo"
+version = "0.1.0"
+source = "apps/linux_wayland_gtk_demo"
+output = "packages/linux_wayland_gtk_demo.rpx"
+
+[app]
+entry = "main.rdx"
+layout = "main.rml"
+
+[[files]]
+src = "GTKWLDMO.BIN"
+dst = "GTKWLDMO.BIN"
+
+[sign]
+enabled = true
+output = "packages/linux_wayland_gtk_demo.rpx.sig"
