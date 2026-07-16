@@ -1,9 +1,9 @@
-# Go OS
+# Zenox OS
 
-![Go OS Logo](assets/logo.png)
+![Zenox OS Logo](assets/logo.png)
 
-![Go OS Start Menu](assets/file_explorer_1.jpg)
-![Go OS File Explorer](assets/file_explorer_2.jpg)
+![Zenox OS Start Menu](assets/file_explorer_1.jpg)
+![Zenox OS File Explorer](assets/file_explorer_2.jpg)
 
 ## 📦 Descarga
 
@@ -11,7 +11,7 @@
 
 *Actualmente en desarrollo.*
 
-**Go OS** es un sistema operativo experimental, moderno y ligero desarrollado desde cero. Está diseñado para ser rápido, eficiente y visualmente atractivo. Cuenta con su propio kernel y una interfaz de usuario gráfica (GUI) completa y funcional.
+**Zenox OS** es un sistema operativo experimental, moderno y ligero desarrollado desde cero. Está diseñado para ser rápido, eficiente y visualmente atractivo. Cuenta con su propio kernel y una interfaz de usuario gráfica (GUI) completa y funcional.
 
 ## Características Principales
 
@@ -41,17 +41,17 @@
   * Hacer click en `X` para cerrar esa ventana minimizada.
   * Usar la rueda del mouse para hacer scroll y navegar el resto de minimizadas acumuladas.
 
-El sistema arranca utilizando el estándar UEFI con un bootloader personalizado. Después de elegir la partición de arranque, se presenta un **Boot Splash** visual mientras el kernel inicializa estructuras vitales como el *allocator* de memoria y detecta los dispositivos de almacenamiento. A continuación, el **Compositor Gráfico** toma el control del *framebuffer* de UEFI para dibujar la GUI y gestionar todos los eventos de hardware (teclado, ratón). Utiliza un sistema cooperativo en el que aplicaciones núcleo como explorar, jugar o utilizar el Editor de Texto / Studio actúan integrados con este mismo bucle principal bajo la arquitectura de `Windows` y widgets nativos propios de Go OS.
+El sistema arranca utilizando el estándar UEFI con un bootloader personalizado. Después de elegir la partición de arranque, se presenta un **Boot Splash** visual mientras el kernel inicializa estructuras vitales como el *allocator* de memoria y detecta los dispositivos de almacenamiento. A continuación, el **Compositor Gráfico** toma el control del *framebuffer* de UEFI para dibujar la GUI y gestionar todos los eventos de hardware (teclado, ratón). Utiliza un sistema cooperativo en el que aplicaciones núcleo como explorar, jugar o utilizar el Editor de Texto / Studio actúan integrados con este mismo bucle principal bajo la arquitectura de `Windows` y widgets nativos propios de Zenox OS.
 
 ![Redux Studio](assets/redux_studio.png)
 
 ## Redux Studio en detalle
 
-**Redux Studio** es el Entorno de Desarrollo Integrado (IDE) creado específicamente para Go OS. Actúa como la herramienta de texto principal del sistema para programadores y entusiastas que exploran el entorno interno.
+**Redux Studio** es el Entorno de Desarrollo Integrado (IDE) creado específicamente para Zenox OS. Actúa como la herramienta de texto principal del sistema para programadores y entusiastas que exploran el entorno interno.
 
 ### ¿Cómo funciona?
 
-1. **Gestión de Ventanas y Renderizado:** Se ejecuta dentro del compositor gráfico de Go OS y renderiza completamente en software sobre el *framebuffer*, usando una grilla de texto en formato 5x7 o tipografías de sistema. Su interfaz (barra superior, pestañas, panel de edición primario) se recalcula dinámicamente según se redimensiona su ventana.
+1. **Gestión de Ventanas y Renderizado:** Se ejecuta dentro del compositor gráfico de Zenox OS y renderiza completamente en software sobre el *framebuffer*, usando una grilla de texto en formato 5x7 o tipografías de sistema. Su interfaz (barra superior, pestañas, panel de edición primario) se recalcula dinámicamente según se redimensiona su ventana.
 2. **Pestañas y Buffers (Tabs):** Mantiene una memoria de búferes de archivos de texto abiertos de manera simultánea. El usuario puede saltar entre distintas pestañas, cada una con su propio cursor, *scroll* (desplazamiento de líneas y columnas) y control de guardado de estado. 
 3. **Portapapeles Global:** Se conecta directamente a la arquitectura de memoria del sistema y su *API* de interacciones universales. Permite copiar partes del código usando sistemas de selección por ratón y pegarlos instantáneamente en la Consola / Terminal o inversamente gracias a un sistema de *clipboard* unificado a nivel Compositor.
 4. **Almacenamiento Directo (I/O):** Lee y escribe los ficheros utilizando los *device index* en clústeres FAT32 tanto de la partición de sistema donde corre el kernel, como en medios exógenos montados al vuelo (ej: unidades flash USB u otros discos formados compatibles).
@@ -60,7 +60,7 @@ A nivel arquitectura, Redux Studio evalúa teclas presionadas durante cada ciclo
 
 ### Construcción de Aplicaciones y Lenguajes Soportados
 
-Redux Studio no es solo un editor de texto, sino el punto de partida para construir herramientas y aplicaciones dentro de Go OS utilizando lenguajes interpretados nativos que se conectan con el sistema.
+Redux Studio no es solo un editor de texto, sino el punto de partida para construir herramientas y aplicaciones dentro de Zenox OS utilizando lenguajes interpretados nativos que se conectan con el sistema.
 
 1. **ReduxLang (`.rdx`):** 
    Es el lenguaje de *scripting* propio y experimental integrado en el sistema operativo. Su sintaxis está influenciada por Rust y JavaScript.
@@ -68,20 +68,20 @@ Redux Studio no es solo un editor de texto, sino el punto de partida para constr
    - **Conectividad:** Los scripts de ReduxLang pueden ser invocados desde la Terminal. Al ejecutarse, las sentencias son leídas directamente desde disco (FAT32), convertidas en un Árbol de Sintaxis Abstracta (AST) y evaluadas en tiempo de ejecución en el mismo *userspace*, permitiendo automatizaciones y procesamiento matemático/lógico nativo.
 
 2. **Redux Markup Language (`.rml`):** 
-   Es el lenguaje de marcado declarativo utilizado para construir las interfaces de usuario (UI) de las aplicaciones en Go OS.
+   Es el lenguaje de marcado declarativo utilizado para construir las interfaces de usuario (UI) de las aplicaciones en Zenox OS.
    - **Cómo funciona:** Define la estructura visual de una ventana (botones, etiquetas, contenedores, etc.) mediante etiquetas XML-like.
-   - **Enlace con la lógica:** Los archivos `.rml` trabajan en conjunto con los scripts `.rdx`. Mientras el archivo `.rml` define cómo se ve la aplicación, el archivo `.rdx` asigna la lógica (qué ocurre cuando se hace clic en un botón, por ejemplo). El motor gráfico de Go OS se encarga de parsear el `.rml` y enlazar los eventos de la interfaz directamente con las funciones expuestas en el código ReduxLang correspondiente.
+   - **Enlace con la lógica:** Los archivos `.rml` trabajan en conjunto con los scripts `.rdx`. Mientras el archivo `.rml` define cómo se ve la aplicación, el archivo `.rdx` asigna la lógica (qué ocurre cuando se hace clic en un botón, por ejemplo). El motor gráfico de Zenox OS se encarga de parsear el `.rml` y enlazar los eventos de la interfaz directamente con las funciones expuestas en el código ReduxLang correspondiente.
 
 3. **Ruby embebido (`.rb`):** 
-   Go OS incluye un subconjunto ligero del intérprete de Ruby empaquetado y adaptado para correr en modo UEFI/Ring 3.
+   Zenox OS incluye un subconjunto ligero del intérprete de Ruby empaquetado y adaptado para correr en modo UEFI/Ring 3.
    - **Cómo se usa:** En Redux Studio puedes escribir programas en Ruby orientados a la gestión del sistema, como por ejemplo las herramientas y builders del formato de paquetes propios (`.rpx`).
    - **Conectividad con el OS:** Los scripts guardados se ejecutan desde la línea de comandos (`ruby <file.rb>`). El intérprete de Ruby se comunica enviando llamadas asíncronas de sistema (*syscalls*) mediante `INT 0x80` para solicitar memoria al *allocator*, leer/escribir archivos bloque a bloque desde los medios flash y renderizar la salida de texto directamente en las capas superpuestas de la interfaz del compositor.
 
-Gracias a este entorno combinado, puedes usar **Redux Studio** para crear un script de inicialización (`startup.nsh`), escribir la lógica empaquetadora de una nueva aplicación en Ruby, o diseñar una aplicación gráfica completa combinando vistas en **`.rml`** con lógica en **`.rdx`**, cerrando así el ciclo de desarrollo íntegramente de forma interactiva ("*self-hosted*") dentro del propio Go OS sin depender de un PC externo.
+Gracias a este entorno combinado, puedes usar **Redux Studio** para crear un script de inicialización (`startup.nsh`), escribir la lógica empaquetadora de una nueva aplicación en Ruby, o diseñar una aplicación gráfica completa combinando vistas en **`.rml`** con lógica en **`.rdx`**, cerrando así el ciclo de desarrollo íntegramente de forma interactiva ("*self-hosted*") dentro del propio Zenox OS sin depender de un PC externo.
 
 ## Lenguajes de Programación Utilizados
 
-* **Rust:** Es el corazón de **Go OS**. Prácticamente toda la base del proyecto, desde las subrutinas de bajo nivel del kernel, el manejo de interrupciones, los controladores del sistema de archivos (FAT32), hasta la construcción del Compositor visual y todas las utilidades de escritorio (Explorador, Taskbar) están desarrollados en código Rust seguro y eficiente.
+* **Rust:** Es el corazón de **Zenox OS**. Prácticamente toda la base del proyecto, desde las subrutinas de bajo nivel del kernel, el manejo de interrupciones, los controladores del sistema de archivos (FAT32), hasta la construcción del Compositor visual y todas las utilidades de escritorio (Explorador, Taskbar) están desarrollados en código Rust seguro y eficiente.
 * **Ensamblador (x86_64 Assembly):** Utilizado para algunas rutinas de inicialización de muy bajo nivel, arranque y contextos de interrupción.
 * **HTML / CSS / JS / Ruby:** Involucrados dentro de los soportes experimentales para la interpretación web con el motor integrado (*LiteHTMLBridge*) y el emulador en el entorno *Linux Runtime* (capa de compatibilidad opcional para correr apps portadas).
 
