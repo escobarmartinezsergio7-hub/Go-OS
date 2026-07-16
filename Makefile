@@ -20,11 +20,13 @@ LINUX_GUEST_AUTO ?= 0
 LINUX_GUEST_DST := $(ESP_DIR)/EFI/LINUX/BOOTX64.EFI
 OPTIONAL_GRUB_INPUTS := $(wildcard $(GRUB_EFI_SRC) $(GRUB_CFG_SRC))
 QEMU ?= qemu-system-x86_64
-NVME_INSTALL_LABEL ?= REDUXEFI
+NVME_INSTALL_LABEL ?= ZENOX OS
+NVME_DATA_LABEL ?= ZENOX DATA
+BOOT_SIZE_MIB ?= 16384
 RUST_SOURCES := $(shell find kernel/src -type f -name '*.rs')
 
 # USB deploy paths (data partition + real EFI System Partition)
-USB_DATA_VOL ?= /Volumes/GOOS
+USB_DATA_VOL ?= /Volumes/ZENOX DATA
 USB_EFI_VOL  ?= /Volumes/EFI
 USB_EFI_DISK ?= disk6s1
 
@@ -84,10 +86,17 @@ run: uefi
 
 install-nvme: uefi
 	@if [ -z "$(PARTITION)" ]; then \
-		echo "Usage: make install-nvme PARTITION=/dev/nvme0n1pX [NVME_INSTALL_LABEL=REDUXEFI]"; \
+		echo "Usage: make install-nvme PARTITION=/dev/nvme0n1pX [DATA_PARTITION=/dev/nvme0n1pY] [NVME_INSTALL_LABEL='ZENOX OS'] [NVME_DATA_LABEL='ZENOX DATA']"; \
 		exit 1; \
 	fi
-	bash scripts/install_nvme.sh --partition "$(PARTITION)" --efi-source "$(BOOT_EFI)" --linuxrt-source "$(LINUXRT_DST)" --label "$(NVME_INSTALL_LABEL)"
+	bash scripts/install_nvme.sh --partition "$(PARTITION)" --efi-source "$(BOOT_EFI)" --linuxrt-source "$(LINUXRT_DST)" --label "$(NVME_INSTALL_LABEL)" $(if $(DATA_PARTITION),--data-partition "$(DATA_PARTITION)",) $(if $(NVME_DATA_LABEL),--data-label "$(NVME_DATA_LABEL)",)
+
+install-nvme-dual: uefi
+	@if [ -z "$(DISK)" ]; then \
+		echo "Usage: make install-nvme-dual DISK=/dev/nvme0n1 [BOOT_SIZE_MIB=16384] [NVME_INSTALL_LABEL='ZENOX OS'] [NVME_DATA_LABEL='ZENOX DATA']"; \
+		exit 1; \
+	fi
+	bash scripts/install_nvme_dual.sh --disk "$(DISK)" --boot-size-mib "$(BOOT_SIZE_MIB)" --efi-source "$(BOOT_EFI)" --linuxrt-source "$(LINUXRT_DST)" --label "$(NVME_INSTALL_LABEL)" --data-label "$(NVME_DATA_LABEL)"
 
 newlib-help:
 	@bash scripts/newlib_port.sh
@@ -126,11 +135,17 @@ ide:
 	 WORKSPACE="$(if $(WORKSPACE),$(WORKSPACE),$(PWD)/build/ide_workspace)" \
 	 bash scripts/run_redux_ide.sh
 
-# Deploy to USB data partition (GOOS)
+# Deploy to USB data partition (ZENOX DATA)
 deploy-data: uefi
 	@if [ -d "$(USB_DATA_VOL)/EFI/BOOT" ]; then \
 		cp $(BOOT_EFI) "$(USB_DATA_VOL)/EFI/BOOT/BOOTX64.EFI"; \
-		echo "Deployed to $(USB_DATA_VOL)/EFI/BOOT/BOOTX64.EFI"; \
+		echo "Deployed kernel to $(USB_DATA_VOL)/EFI/BOOT/BOOTX64.EFI"; \
+		if [ -d "$(LINUXRT_DST)" ]; then \
+			rm -rf "$(USB_DATA_VOL)/LINUXRT" || true; \
+			mkdir -p "$(USB_DATA_VOL)/LINUXRT"; \
+			cp -R "$(LINUXRT_DST)/." "$(USB_DATA_VOL)/LINUXRT/"; \
+			echo "Deployed LINUXRT to $(USB_DATA_VOL)/LINUXRT"; \
+		fi; \
 	else \
 		echo "ERROR: $(USB_DATA_VOL)/EFI/BOOT not found. Is the USB mounted?"; \
 		exit 1; \
@@ -142,26 +157,40 @@ deploy-efi: uefi
 	if mount | grep -q "$(USB_EFI_VOL)"; then \
 		EFI_PART="already_mounted"; \
 	else \
-		EFI_PART=$$(diskutil list | grep -i "EFI" | grep -i "disk" | head -1 | awk '{print $$NF}'); \
+		EFI_PART=$$(diskutil list external | grep -i "EFI" | grep -i "disk" | head -1 | awk '{print $$NF}'); \
 		if [ -n "$$EFI_PART" ]; then \
-			echo "Auto-detected EFI partition: $$EFI_PART"; \
-			diskutil mount $$EFI_PART || diskutil mount $(USB_EFI_DISK); \
+			echo "Auto-detected external EFI partition: $$EFI_PART"; \
+			diskutil mount $$EFI_PART || diskutil mount $(USB_EFI_DISK) || true; \
 		else \
-			echo "Mounting EFI partition ($(USB_EFI_DISK))..."; \
-			diskutil mount $(USB_EFI_DISK); \
+			echo "Mounting fallback EFI partition ($(USB_EFI_DISK))..."; \
+			diskutil mount $(USB_EFI_DISK) || true; \
 		fi; \
 	fi
-	@mkdir -p "$(USB_EFI_VOL)/EFI/BOOT"
-	@cp $(BOOT_EFI) "$(USB_EFI_VOL)/EFI/BOOT/BOOTX64.EFI"
-	@echo "Deployed to $(USB_EFI_VOL)/EFI/BOOT/BOOTX64.EFI"
+	@if [ -d "$(USB_EFI_VOL)" ]; then \
+		mkdir -p "$(USB_EFI_VOL)/EFI/BOOT"; \
+		cp $(BOOT_EFI) "$(USB_EFI_VOL)/EFI/BOOT/BOOTX64.EFI"; \
+		echo "Deployed kernel to $(USB_EFI_VOL)/EFI/BOOT/BOOTX64.EFI"; \
+		if [ -d "$(LINUXRT_DST)" ]; then \
+			rm -rf "$(USB_EFI_VOL)/LINUXRT" || true; \
+			mkdir -p "$(USB_EFI_VOL)/LINUXRT"; \
+			cp -R "$(LINUXRT_DST)/." "$(USB_EFI_VOL)/LINUXRT/"; \
+			echo "Deployed LINUXRT to $(USB_EFI_VOL)/LINUXRT"; \
+		fi; \
+	else \
+		echo "WARNING: EFI volume not mounted, skipped deploy-efi."; \
+	fi
 
 # Deploy to BOTH partitions (recommended)
 deploy: deploy-data deploy-efi
-	@echo "Deploy complete: kernel on both GOOS + EFI partitions."
+	@echo "Deploy complete: kernel and LINUXRT updated."
+
+# Generate bootable ISO for Rufus / Etcher / dd
+iso: uefi
+	@bash scripts/build_iso.sh "$(ESP_DIR)" "$(if $(ISO_OUT),$(ISO_OUT),$(BUILD_DIR)/goos.iso)"
 
 clean:
 	rm -rf $(BUILD_DIR)
 	cargo clean --manifest-path $(KERNEL_MANIFEST)
 	cargo clean --manifest-path sdk/reduxlang/Cargo.toml
 
-.PHONY: all uefi litehtml-sync litehtml-bridge-build servo-adapter-build servort-stage servort-stage-esp linux-guest-stage linux-guest-build run install-nvme newlib-help newlib-scaffold newlib-build newlib-doctor wry-host servo-host ide deploy deploy-data deploy-efi clean
+.PHONY: all uefi litehtml-sync litehtml-bridge-build servo-adapter-build servort-stage servort-stage-esp linux-guest-stage linux-guest-build run install-nvme install-nvme-dual newlib-help newlib-scaffold newlib-build newlib-doctor wry-host servo-host ide deploy deploy-data deploy-efi iso clean

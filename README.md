@@ -7,7 +7,7 @@
 
 ## 📦 Descarga
 
-> **[⬇️ Descargar GoOS.zip desde Google Drive](https://drive.google.com/file/d/1UiUjeYaM_guVyEh6v4EhIuZxtWv5ULTJ/view?usp=share_link)**
+> **[⬇️ Descargar Zenox OS (ISO) desde Google Drive](https://drive.google.com/file/d/1_H7D6Sof6DYCAjobmB7nGJo9ENxIpIvO/view?usp=sharing)**
 
 *Actualmente en desarrollo.*
 
