@@ -152,7 +152,7 @@ Este comando compila el kernel y copia el binario EFI a una USB formateada previ
 #### Requisitos
 
 - USB formateada con **tabla de particiones GPT** y al menos una partición **FAT32**.
-- En macOS la USB debe montarse como `/Volumes/GOOS` (datos) y `/Volumes/EFI` (EFI System Partition).
+- En macOS la USB debe montarse como `/Volumes/ZENOX DATA` (datos) y `/Volumes/EFI` (EFI System Partition).
 
 #### Uso
 
@@ -201,10 +201,10 @@ Genera una imagen `.iso` UEFI-booteable que puedes grabar en USB con **Rufus**, 
 make iso
 ```
 
-Esto genera `build/goos.iso`. Para cambiar la ruta de salida:
+Esto genera `build/zenoxos.iso`. Para cambiar la ruta de salida:
 
 ```bash
-make iso ISO_OUT=~/Desktop/GoOS.iso
+make iso ISO_OUT=~/Desktop/ZenoxOS.iso
 ```
 
 #### Grabar la ISO con Rufus (Windows)
@@ -213,7 +213,7 @@ make iso ISO_OUT=~/Desktop/GoOS.iso
 2. Inserta tu USB.
 3. En Rufus:
    - **Dispositivo:** selecciona tu USB.
-   - **Tipo de arranque:** selecciona `goos.iso`.
+   - **Tipo de arranque:** selecciona `zenoxos.iso`.
    - **Esquema de partición:** `GPT`.
    - **Sistema destino:** `UEFI (no CSM)`.
 4. Click en **Empezar** y espera a que termine.
@@ -222,7 +222,7 @@ make iso ISO_OUT=~/Desktop/GoOS.iso
 #### Grabar con dd (Linux / macOS)
 
 ```bash
-sudo dd if=build/goos.iso of=/dev/sdX bs=4M status=progress
+sudo dd if=build/zenoxos.iso of=/dev/sdX bs=4M status=progress
 sync
 ```
 
@@ -231,7 +231,7 @@ sync
 #### Grabar con Etcher (multiplataforma)
 
 1. Descarga [balenaEtcher](https://etcher.balena.io/).
-2. Selecciona `goos.iso`, selecciona tu USB, click **Flash!**.
+2. Selecciona `zenoxos.iso`, selecciona tu USB, click **Flash!**.
 
 #### Linux guest EFI (ruta 2)
 
@@ -642,7 +642,7 @@ ruby tools/redux_recipe_build.rb recipes/linux_wayland_qt_demo/recipe.toml
 
 # Alternativa sin compilar en host Linux:
 # descarga bins precompilados oficiales (Ubuntu) y los deja en la USB
-bash scripts/stage_wayland_demo_bins.sh /Volumes/GOOS
+bash scripts/stage_wayland_demo_bins.sh "/Volumes/ZENOX DATA"
 ```
 
 En ReduxOS (terminal):

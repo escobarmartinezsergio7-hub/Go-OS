@@ -186,7 +186,7 @@ deploy: deploy-data deploy-efi
 
 # Generate bootable ISO for Rufus / Etcher / dd
 iso: uefi
-	@bash scripts/build_iso.sh "$(ESP_DIR)" "$(if $(ISO_OUT),$(ISO_OUT),$(BUILD_DIR)/goos.iso)"
+	@bash scripts/build_iso.sh "$(ESP_DIR)" "$(if $(ISO_OUT),$(ISO_OUT),$(BUILD_DIR)/zenoxos.iso)"
 
 clean:
 	rm -rf $(BUILD_DIR)
